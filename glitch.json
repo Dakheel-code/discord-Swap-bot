@@ -1,0 +1,27 @@
+{
+  "install": "npm install",
+  "start": "node src/index.js",
+  "watch": {
+    "ignore": [
+      "logs/",
+      "distribution_messages.json"
+    ],
+    "install": {
+      "include": [
+        "^package\\.json$",
+        "^\\.env$"
+      ]
+    },
+    "restart": {
+      "exclude": [
+        "^public/",
+        "^dist/"
+      ],
+      "include": [
+        "\\.js$",
+        "^src/"
+      ]
+    },
+    "throttle": 1000
+  }
+}

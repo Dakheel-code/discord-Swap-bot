@@ -1,0 +1,9 @@
+node_modules/
+.env
+credentials.json
+*.log
+.DS_Store
+dist/
+distribution_messages.json
+logs/
+.pm2/
