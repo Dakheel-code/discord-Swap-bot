@@ -7,6 +7,7 @@ let sheetsClientWithAuth = null; // For write operations
 
 /**
  * Initialize Google Sheets API client using API Key
+ * Supports both environment variable (Railway) and file path (local)
  */
 export async function initializeSheetsClient() {
   try {
