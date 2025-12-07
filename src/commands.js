@@ -14,10 +14,10 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('move')
     .setDescription('Move players to a specific clan')
-    .addStringOption(option =>
+    .addUserOption(option =>
       option
-        .setName('players')
-        .setDescription('Player names (separate multiple names with commas)')
+        .setName('player')
+        .setDescription('Discord user to move')
         .setRequired(true)
     )
     .addStringOption(option =>
@@ -35,20 +35,20 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('hold')
     .setDescription('Exclude players from distribution')
-    .addStringOption(option =>
+    .addUserOption(option =>
       option
-        .setName('players')
-        .setDescription('Player names (separate multiple names with commas)')
+        .setName('player')
+        .setDescription('Discord user to exclude')
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('include')
     .setDescription('Include a previously excluded player')
-    .addStringOption(option =>
+    .addUserOption(option =>
       option
         .setName('player')
-        .setDescription('Player name')
+        .setDescription('Discord user to include')
         .setRequired(true)
     ),
 
@@ -66,11 +66,11 @@ export const commands = [
 
   new SlashCommandBuilder()
     .setName('schedule')
-    .setDescription('Schedule automatic distribution posting')
+    .setDescription('Schedule automatic distribution posting (UTC timezone)')
     .addStringOption(option =>
       option
         .setName('datetime')
-        .setDescription('Date and time (YYYY-MM-DD HH:MM format, e.g., 2024-12-25 14:30)')
+        .setDescription('Date and time in UTC (YYYY-MM-DD HH:MM, e.g., 2024-12-25 14:30)')
         .setRequired(true)
     )
     .addChannelOption(option =>

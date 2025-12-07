@@ -31,55 +31,72 @@ export class DistributionManager {
     this.sortColumn = columnName;
     this.customSeasonNumber = seasonNumber; // Store custom season number
 
-    // Keep WILDCARDS, excludedPlayers, manualAssignments, wildcardInfo, and manualMoveCount
-    const wildcards = this.groups.WILDCARDS || [];
+    // Reset groups and WILDCARDS
     this.groups = {
       RGR: [],
       OTL: [],
       RND: [],
-      WILDCARDS: wildcards,
+      WILDCARDS: [],
     };
     
-    // Don't reset manual move count - keep it to preserve manual assignments
-    // this.manualMoveCount is already set and should be preserved
+    // Clear previous wildcard info
+    this.wildcardInfo.clear();
+    
+    // Process players with Action column
+    const playersWithAction = [];
+    const availablePlayers = [];
+    
+    players.forEach(player => {
+      const action = player.Action ? player.Action.trim() : '';
+      const identifier = this.getPlayerIdentifier(player);
+      
+      if (action) {
+        // Player has an action - add to WILDCARDS
+        playersWithAction.push(player);
+        
+        // Store wildcard info
+        if (action === 'Hold') {
+          // Get player's current clan
+          const currentClan = this.getPlayerClan(player);
+          this.wildcardInfo.set(identifier, {
+            type: 'excluded',
+            target: currentClan || 'Unknown'
+          });
+        } else if (action === 'RGR' || action === 'OTL' || action === 'RND') {
+          // Manual move
+          this.wildcardInfo.set(identifier, {
+            type: 'manual',
+            target: action
+          });
+        } else {
+          // Unknown action
+          this.wildcardInfo.set(identifier, {
+            type: 'other',
+            target: action
+          });
+        }
+      } else {
+        // No action - available for distribution
+        availablePlayers.push(player);
+      }
+    });
+    
+    // Add players with actions to WILDCARDS
+    this.groups.WILDCARDS = playersWithAction;
 
-    // Filter out excluded players
-    const availablePlayers = players.filter(
-      player => !this.excludedPlayers.has(this.getPlayerIdentifier(player))
-    );
-
-    // Sort players by the specified column (descending)
+    // Sort available players by the specified column (descending)
     const sortedPlayers = [...availablePlayers].sort((a, b) => {
       const valueA = this.parseValue(a[columnName]);
       const valueB = this.parseValue(b[columnName]);
       return valueB - valueA; // Descending order
     });
 
-    // First, count manually assigned players (but don't add them to groups - they go to WILDCARDS)
-    const manuallyAssigned = [];
-    sortedPlayers.forEach(player => {
-      const identifier = this.getPlayerIdentifier(player);
-      if (this.manualAssignments.has(identifier)) {
-        const targetGroup = this.manualAssignments.get(identifier);
-        manuallyAssigned.push(identifier);
-        // Count manual moves for main groups only (for display purposes)
-        if (targetGroup === 'RGR' || targetGroup === 'OTL' || targetGroup === 'RND') {
-          this.manualMoveCount[targetGroup]++;
-        }
-      }
-    });
-
-    // Remove manually assigned players from sorted list
-    const remainingPlayers = sortedPlayers.filter(
-      player => !manuallyAssigned.includes(this.getPlayerIdentifier(player))
-    );
-
-    // Distribute remaining players in order: RGR -> OTL -> RND
+    // Distribute players in order: RGR -> OTL -> RND
     const groupNames = config.groups.names;
     let currentGroupIndex = 0;
     let groupCounts = { RGR: 0, OTL: 0, RND: 0 }; // Track actual count including skipped
 
-    for (const player of remainingPlayers) {
+    for (const player of sortedPlayers) {
       // Get player's clan from column E (Clan, Team, Guild, etc.)
       const playerClan = this.getPlayerClan(player);
       
@@ -237,61 +254,159 @@ export class DistributionManager {
   }
 
   /**
-   * Find a player by name (case-insensitive)
-   * @param {string} playerName - Name to search for
+   * Find a player by name or Discord ID (case-insensitive)
+   * @param {string} playerName - Name or Discord ID to search for
    * @returns {Object|null} Player object or null
    */
   findPlayer(playerName) {
-    const searchName = playerName.toLowerCase().trim();
+    let searchTerm = String(playerName).trim();
     
-    // Search in all players
-    for (const player of this.allPlayers) {
-      const playerNameValue = this.getPlayerName(player).toLowerCase().trim();
-      if (playerNameValue === searchName || playerNameValue.includes(searchName)) {
-        return player;
+    console.log(`🔍 findPlayer: Searching for "${playerName}"`);
+    console.log(`📊 Total players in allPlayers: ${this.allPlayers.length}`);
+    console.log(`📊 Total players in WILDCARDS: ${this.groups.WILDCARDS ? this.groups.WILDCARDS.length : 0}`);
+    
+    // Debug: Show first 3 players in WILDCARDS
+    if (this.groups.WILDCARDS && this.groups.WILDCARDS.length > 0) {
+      console.log(`📋 First 3 WILDCARDS players:`);
+      for (let i = 0; i < Math.min(3, this.groups.WILDCARDS.length); i++) {
+        const p = this.groups.WILDCARDS[i];
+        console.log(`  ${i + 1}. Name: "${this.getPlayerName(p)}", DiscordName: "${p.DiscordName || 'N/A'}", Discord-ID: "${p['Discord-ID'] || 'N/A'}"`);
       }
     }
+    
+    // Extract Discord ID from mention if provided (<@123456> or <@!123456>)
+    let discordId = null;
+    const mentionMatch = searchTerm.match(/<@!?(\d+)>/);
+    if (mentionMatch) {
+      discordId = mentionMatch[1]; // Extract Discord ID
+      console.log(`✅ Extracted Discord ID from mention: ${discordId}`);
+    }
+    
+    const searchTermLower = searchTerm.toLowerCase();
+    
+    // Search in all players
+    console.log(`🔍 Searching in allPlayers...`);
+    console.log(`🔍 Looking for: "${searchTerm}"`);
+    
+    // Debug: Show first 5 players' DiscordNames
+    for (let i = 0; i < Math.min(5, this.allPlayers.length); i++) {
+      const p = this.allPlayers[i];
+      console.log(`  📋 Player ${i + 1}: DiscordName="${p.DiscordName || 'N/A'}"`);
+    }
+    
+    for (const player of this.allPlayers) {
+      // Check by DiscordName (exact match for mentions)
+      if (player.DiscordName && player.DiscordName.trim() === searchTerm) {
+        console.log(`✅ Found player in allPlayers by DiscordName exact match: ${this.getPlayerName(player)}`);
+        return player;
+      }
+      
+      // Check by name
+      const playerNameValue = this.getPlayerName(player).toLowerCase().trim();
+      if (playerNameValue === searchTermLower || playerNameValue.includes(searchTermLower)) {
+        console.log(`✅ Found player in allPlayers by name: ${this.getPlayerName(player)}`);
+        return player;
+      }
+      
+      // If we have a Discord ID to search for
+      if (discordId) {
+        // Check if player has a direct Discord ID field
+        if (player['Discord-ID'] || player['Discord_ID'] || player.DiscordID) {
+          const playerDiscordId = String(player['Discord-ID'] || player['Discord_ID'] || player.DiscordID).trim();
+          if (playerDiscordId === discordId) {
+            console.log(`✅ Found player in allPlayers by Discord-ID: ${this.getPlayerName(player)}`);
+            return player;
+          }
+        }
+      }
+    }
+    
+    console.log(`⚠️ Player not found in allPlayers, searching in groups...`);
 
-    // Search in WILDCARDS if not found in allPlayers
-    if (this.groups.WILDCARDS) {
-      for (const player of this.groups.WILDCARDS) {
-        const playerNameValue = this.getPlayerName(player).toLowerCase().trim();
-        if (playerNameValue === searchName || playerNameValue.includes(searchName)) {
-          return player;
+    // Search in all groups (RGR, OTL, RND, WILDCARDS)
+    const allGroups = ['RGR', 'OTL', 'RND', 'WILDCARDS'];
+    for (const groupName of allGroups) {
+      if (this.groups[groupName] && this.groups[groupName].length > 0) {
+        console.log(`🔍 Searching in ${groupName} (${this.groups[groupName].length} players)...`);
+        
+        // Debug: Show first player in this group
+        const firstPlayer = this.groups[groupName][0];
+        console.log(`  📋 First player in ${groupName}: Name="${this.getPlayerName(firstPlayer)}", DiscordName="${firstPlayer.DiscordName || 'N/A'}", Discord-ID="${firstPlayer['Discord-ID'] || 'N/A'}"`);
+        
+        for (const player of this.groups[groupName]) {
+          // Check by DiscordName (exact match for mentions)
+          if (player.DiscordName && player.DiscordName.trim() === searchTerm) {
+            console.log(`✅ Found player in ${groupName} by DiscordName exact match: ${this.getPlayerName(player)}`);
+            return player;
+          }
+          
+          // Check by name
+          const playerNameValue = this.getPlayerName(player).toLowerCase().trim();
+          if (playerNameValue === searchTermLower || playerNameValue.includes(searchTermLower)) {
+            console.log(`✅ Found player in ${groupName} by name: ${this.getPlayerName(player)}`);
+            return player;
+          }
+          
+          // If we have a Discord ID to search for
+          if (discordId) {
+            // Check if player has a direct Discord ID field
+            if (player['Discord-ID'] || player['Discord_ID'] || player.DiscordID) {
+              const playerDiscordId = String(player['Discord-ID'] || player['Discord_ID'] || player.DiscordID).trim();
+              if (playerDiscordId === discordId) {
+                console.log(`✅ Found player in ${groupName} by Discord-ID: ${this.getPlayerName(player)}`);
+                return player;
+              }
+            }
+          }
         }
       }
     }
 
+    console.log(`❌ Player not found anywhere: "${playerName}"`);
     return null;
   }
 
   /**
    * Mark player as done (moved)
-   * @param {string} playerName - Name of the player
+   * @param {string} playerName - Name of the player or mention
    */
   markPlayerAsDone(playerName) {
+    // Try to find the player
     const player = this.findPlayer(playerName);
-    if (!player) {
-      throw new Error(`Player not found: ${playerName}`);
+    
+    if (player) {
+      // Found player - use their identifier
+      const identifier = this.getPlayerIdentifier(player);
+      this.completedPlayers.add(identifier);
+      console.log(`✅ Marked player as done using identifier: ${identifier}`);
+    } else {
+      // Player not found - use the mention/name directly
+      this.completedPlayers.add(playerName);
+      console.log(`✅ Marked as done using direct mention: ${playerName}`);
     }
-
-    const identifier = this.getPlayerIdentifier(player);
-    this.completedPlayers.add(identifier);
+    
     return true;
   }
 
   /**
    * Unmark player as done (remove checkmark)
-   * @param {string} playerName - Name of the player
+   * @param {string} playerName - Name of the player or mention
    */
   unmarkPlayerAsDone(playerName) {
+    // Try to find the player
     const player = this.findPlayer(playerName);
-    if (!player) {
-      throw new Error(`Player not found: ${playerName}`);
+    
+    if (player) {
+      // Found player - use their identifier
+      const identifier = this.getPlayerIdentifier(player);
+      this.completedPlayers.delete(identifier);
+      console.log(`✅ Unmarked player using identifier: ${identifier}`);
+    } else {
+      // Player not found - use the mention/name directly
+      this.completedPlayers.delete(playerName);
+      console.log(`✅ Unmarked using direct mention: ${playerName}`);
     }
-
-    const identifier = this.getPlayerIdentifier(player);
-    this.completedPlayers.delete(identifier);
+    
     return true;
   }
 
@@ -388,9 +503,29 @@ export class DistributionManager {
         output += '_No players_\n\n';
       } else {
         players.forEach((player, index) => {
-          const name = this.getPlayerName(player);
+          // Use DiscordName (mention) if available, otherwise use regular name
+          const name = player.DiscordName || this.getPlayerName(player);
           const identifier = this.getPlayerIdentifier(player);
-          const isDone = this.completedPlayers.has(identifier);
+          
+          // Check if marked as done by identifier OR by DiscordName mention OR by Discord-ID
+          let isDone = this.completedPlayers.has(identifier);
+          
+          // Also check by DiscordName (exact match)
+          if (!isDone && player.DiscordName) {
+            isDone = this.completedPlayers.has(player.DiscordName);
+          }
+          
+          // Also check by Discord-ID (extract from mention and compare)
+          if (!isDone && player['Discord-ID']) {
+            // Check if any completed player mention contains this Discord-ID
+            for (const completed of this.completedPlayers) {
+              if (completed.includes(player['Discord-ID'])) {
+                isDone = true;
+                break;
+              }
+            }
+          }
+          
           const value = this.sortColumn ? player[this.sortColumn] : '';
           
           output += `• ${name}`;
@@ -422,9 +557,29 @@ export class DistributionManager {
 
       output += `## WILDCARDS (${this.groups.WILDCARDS.length})\n`;
       this.groups.WILDCARDS.forEach((player, index) => {
-        const name = this.getPlayerName(player);
+        // Use DiscordName (mention) if available, otherwise use regular name
+        const name = player.DiscordName || this.getPlayerName(player);
         const identifier = this.getPlayerIdentifier(player);
-        const isDone = this.completedPlayers.has(identifier);
+        
+        // Check if marked as done by identifier OR by DiscordName mention OR by Discord-ID
+        let isDone = this.completedPlayers.has(identifier);
+        
+        // Also check by DiscordName (exact match)
+        if (!isDone && player.DiscordName) {
+          isDone = this.completedPlayers.has(player.DiscordName);
+        }
+        
+        // Also check by Discord-ID (extract from mention and compare)
+        if (!isDone && player['Discord-ID']) {
+          // Check if any completed player mention contains this Discord-ID
+          for (const completed of this.completedPlayers) {
+            if (completed.includes(player['Discord-ID'])) {
+              isDone = true;
+              break;
+            }
+          }
+        }
+        
         const info = this.wildcardInfo.get(identifier);
         
         let suffix = '';

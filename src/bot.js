@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder } from 'discord.js';
 import { config } from './config.js';
 import { commands } from './commands.js';
-import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping } from './sheets.js';
+import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions } from './sheets.js';
 import { DistributionManager } from './distribution.js';
 import fs from 'fs';
 
@@ -207,7 +207,7 @@ export class DiscordBot {
   }
 
   /**
-   * Handle /distribute command
+   * Handle /swap command (formerly /distribute)
    */
   async handleDistribute(interaction) {
     const columnName = 'Trophies'; // Always use Trophies column
@@ -231,6 +231,10 @@ export class DiscordBot {
       return;
     }
 
+    // Save for later use in /done command
+    this.lastColumnName = columnName;
+    this.lastSeasonNumber = seasonNumber;
+    
     // Distribute players with optional season number
     this.distributionManager.distribute(this.playersData, columnName, seasonNumber);
     const summary = this.distributionManager.getSummary();
@@ -287,147 +291,158 @@ export class DiscordBot {
    * Handle /move command
    */
   async handleMove(interaction) {
-    const playersInput = interaction.options.getString('players');
+    const discordUser = interaction.options.getUser('player');
     const targetGroup = interaction.options.getString('clan');
 
-    // Load data if not already loaded
-    if (this.playersData.length === 0) {
-      this.playersData = await fetchPlayersDataWithDiscordNames();
-      this.distributionManager.allPlayers = this.playersData;
-    }
+    try {
+      // Use Discord ID directly - no need to search in memory
+      const discordId = discordUser.id;
+      
+      console.log(`🔄 Moving player: ${discordUser.username} (Discord ID: ${discordId}) to ${targetGroup}`);
+      console.log(`📋 User object:`, {
+        id: discordUser.id,
+        username: discordUser.username,
+        tag: discordUser.tag,
+        discriminator: discordUser.discriminator
+      });
+      
+      // Write directly to Google Sheet Action column
+      await writePlayerAction(discordId, targetGroup);
+      
+      // Success message
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff00)
+        .setTitle('✅ Player Moved')
+        .setDescription(`**${discordUser.username}** has been assigned to **${targetGroup}**`)
+        .setTimestamp();
 
-    // Split player names by comma and trim whitespace
-    const playerNames = playersInput.split(',').map(name => name.trim()).filter(name => name.length > 0);
-    
-    const movedPlayers = [];
-    const failedPlayers = [];
-
-    for (const playerName of playerNames) {
-      try {
-        this.distributionManager.movePlayer(playerName, targetGroup);
-        movedPlayers.push(playerName);
-      } catch (error) {
-        failedPlayers.push(`${playerName} (${error.message})`);
+      await interaction.editReply({ embeds: [embed] });
+      
+    } catch (error) {
+      console.error('Error in handleMove:', error);
+      
+      let description = `**Failed to move ${discordUser.username}**\n\n`;
+      
+      // Check if it's a "player not found" error
+      if (error.message.includes('Player not found')) {
+        description += `❌ **Player not found in DiscordMap**\n\n`;
+        description += `Please use \`/map\` command first to link this player:\n`;
+        description += `\`\`\`\n/map ingame_id:${discordUser.username} discord_id:@${discordUser.username}\n\`\`\``;
+      } else {
+        description += `**Error:** ${error.message}`;
       }
-    }
+      
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('❌ Move Failed')
+        .setDescription(description)
+        .setTimestamp();
 
-    // Update distribution messages if they exist
-    if (this.lastDistributionMessages.length > 0 && movedPlayers.length > 0) {
-      try {
-        const formattedText = this.distributionManager.getFormattedDistribution();
-        await this.updateDistributionMessages(formattedText);
-      } catch (error) {
-        console.error('Failed to update distribution messages:', error);
-      }
+      await interaction.editReply({ embeds: [embed] });
     }
-
-    let description = '';
-    if (movedPlayers.length > 0) {
-      description += `**Moved to ${targetGroup}:**\n${movedPlayers.map(p => `• ${p}`).join('\n')}`;
-      if (this.lastDistributionMessages.length > 0) {
-        description += '\n\n_Distribution message updated_';
-      }
-    }
-    if (failedPlayers.length > 0) {
-      description += `\n\n**Failed:**\n${failedPlayers.map(p => `• ${p}`).join('\n')}`;
-    }
-
-    const embed = new EmbedBuilder()
-      .setColor(movedPlayers.length > 0 ? 0x0099ff : 0xff0000)
-      .setTitle(movedPlayers.length > 0 ? '✅ Players Moved' : '❌ Move Failed')
-      .setDescription(description)
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [embed] });
   }
 
   /**
-   * Handle /exclude command
+   * Handle /exclude command (hold)
    */
   async handleExclude(interaction) {
-    const playersInput = interaction.options.getString('players');
+    const discordUser = interaction.options.getUser('player');
 
-    // Load data if not already loaded
-    if (this.playersData.length === 0) {
-      this.playersData = await fetchPlayersDataWithDiscordNames();
-      this.distributionManager.allPlayers = this.playersData;
-    }
+    try {
+      // Use Discord ID directly
+      const discordId = discordUser.id;
+      
+      console.log(`⏸️ Excluding player: ${discordUser.username} (${discordId})`);
+      
+      // Write "Hold" directly to Google Sheet Action column
+      await writePlayerAction(discordId, 'Hold');
+      
+      // Success message
+      const embed = new EmbedBuilder()
+        .setColor(0xff9900)
+        .setTitle('✅ Player Excluded')
+        .setDescription(`**${discordUser.username}** has been excluded from distribution`)
+        .setTimestamp();
 
-    // Split player names by comma and trim whitespace
-    const playerNames = playersInput.split(',').map(name => name.trim()).filter(name => name.length > 0);
-    
-    const excludedPlayers = [];
-    const failedPlayers = [];
-
-    for (const playerName of playerNames) {
-      try {
-        this.distributionManager.excludePlayer(playerName);
-        excludedPlayers.push(playerName);
-      } catch (error) {
-        failedPlayers.push(`${playerName} (${error.message})`);
+      await interaction.editReply({ embeds: [embed] });
+      
+    } catch (error) {
+      console.error('Error in handleExclude:', error);
+      
+      let description = `**Failed to exclude ${discordUser.username}**\n\n`;
+      
+      // Check if it's a "player not found" error
+      if (error.message.includes('Player not found')) {
+        description += `❌ **Player not found in DiscordMap**\n\n`;
+        description += `Please use \`/map\` command first to link this player:\n`;
+        description += `\`\`\`\n/map ingame_id:${discordUser.username} discord_id:@${discordUser.username}\n\`\`\``;
+      } else {
+        description += `**Error:** ${error.message}`;
       }
-    }
+      
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('❌ Exclude Failed')
+        .setDescription(description)
+        .setTimestamp();
 
-    // Update distribution messages if they exist
-    if (this.lastDistributionMessages.length > 0 && excludedPlayers.length > 0) {
-      try {
-        const formattedText = this.distributionManager.getFormattedDistribution();
-        await this.updateDistributionMessages(formattedText);
-      } catch (error) {
-        console.error('Failed to update distribution messages:', error);
-      }
+      await interaction.editReply({ embeds: [embed] });
     }
-
-    let description = '';
-    if (excludedPlayers.length > 0) {
-      description += `**Excluded:**\n${excludedPlayers.map(p => `• ${p}`).join('\n')}`;
-      if (this.lastDistributionMessages.length > 0) {
-        description += '\n\n_Distribution message updated_';
-      }
-    }
-    if (failedPlayers.length > 0) {
-      description += `\n\n**Failed:**\n${failedPlayers.map(p => `• ${p}`).join('\n')}`;
-    }
-
-    const embed = new EmbedBuilder()
-      .setColor(excludedPlayers.length > 0 ? 0xff9900 : 0xff0000)
-      .setTitle(excludedPlayers.length > 0 ? '✅ Players Excluded' : '❌ Exclude Failed')
-      .setDescription(description)
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [embed] });
   }
 
   /**
    * Handle /include command
    */
   async handleInclude(interaction) {
-    const playerName = interaction.options.getString('player');
+    const discordUser = interaction.options.getUser('player');
 
-    this.distributionManager.includePlayer(playerName);
+    try {
+      // Use Discord ID directly
+      const discordId = discordUser.id;
+      
+      console.log(`▶️ Including player: ${discordUser.username} (${discordId})`);
+      
+      // Clear Action column directly in Google Sheet
+      const result = await clearPlayerAction(discordId);
 
-    // Update distribution messages if they exist
-    if (this.lastDistributionMessages.length > 0) {
-      try {
-        const formattedText = this.distributionManager.getFormattedDistribution();
-        await this.updateDistributionMessages(formattedText);
-      } catch (error) {
-        console.error('Failed to update distribution messages:', error);
+      // Build description based on what was cleared
+      let description = `**${discordUser.username}** has been added back to distribution`;
+      
+      if (result.previousValue) {
+        description += `\n\n_Cleared previous action: "${result.previousValue}"_`;
       }
+
+      // Success message
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff00)
+        .setTitle('✅ Player Included')
+        .setDescription(description)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+      
+    } catch (error) {
+      console.error('Error in handleInclude:', error);
+      
+      let description = `**Failed to include ${discordUser.username}**\n\n`;
+      
+      // Check if it's a "player not found" error
+      if (error.message.includes('Player not found')) {
+        description += `❌ **Player not found in DiscordMap**\n\n`;
+        description += `Please use \`/map\` command first to link this player:\n`;
+        description += `\`\`\`\n/map ingame_id:${discordUser.username} discord_id:@${discordUser.username}\n\`\`\``;
+      } else {
+        description += `**Error:** ${error.message}`;
+      }
+      
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('❌ Include Failed')
+        .setDescription(description)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
     }
-
-    let description = `**${playerName}** has been added back to distribution`;
-    if (this.lastDistributionMessages.length > 0) {
-      description += '\n\n_Distribution message updated_';
-    }
-
-    const embed = new EmbedBuilder()
-      .setColor(0x00ff00)
-      .setTitle('✅ Player Included')
-      .setDescription(description)
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [embed] });
   }
 
   /**
@@ -482,37 +497,62 @@ export class DiscordBot {
    * Handle /reset command
    */
   async handleReset(interaction) {
-    // Save current sort column
-    const currentSortColumn = this.distributionManager.sortColumn;
+    try {
+      console.log('🔄 Resetting all data...');
+      
+      // Clear all actions from Master_CSV sheet
+      const result = await clearAllPlayerActions();
+      
+      // Save current sort column
+      const currentSortColumn = this.distributionManager.sortColumn;
 
-    // Refresh data from Google Sheets
-    this.playersData = await fetchPlayersDataWithDiscordNames();
+      // Refresh data from Google Sheets
+      this.playersData = await fetchPlayersDataWithDiscordNames();
 
-    // Create new distribution manager
-    this.distributionManager = new DistributionManager();
+      // Create new distribution manager
+      this.distributionManager = new DistributionManager();
 
-    // Re-distribute if there was a previous distribution
-    if (this.playersData.length > 0 && currentSortColumn) {
-      this.distributionManager.distribute(this.playersData, currentSortColumn);
+      // Re-distribute if there was a previous distribution
+      if (this.playersData.length > 0 && currentSortColumn) {
+        this.distributionManager.distribute(this.playersData, currentSortColumn);
+      }
+
+      // Clear saved messages
+      this.lastDistributionMessages = [];
+      this.lastChannelId = null;
+      
+      // Delete the saved messages file
+      if (fs.existsSync(this.messagesFilePath)) {
+        fs.unlinkSync(this.messagesFilePath);
+        console.log('🗑️ Deleted saved message IDs');
+      }
+
+      let description = `**All data has been reset:**\n\n`;
+      description += `✅ Cleared ${result.clearedCount} actions from DiscordMap (Column C)\n`;
+      description += `✅ Reset distribution manager\n`;
+      description += `✅ Cleared saved messages\n`;
+      description += `✅ Refreshed player data (${this.playersData.length} players)\n\n`;
+      description += `_Next /swap will create a new distribution message_`;
+
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('✅ Reset Complete')
+        .setDescription(description)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+      
+    } catch (error) {
+      console.error('Error in handleReset:', error);
+      
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('❌ Reset Failed')
+        .setDescription(`**Failed to reset**\n\n**Error:** ${error.message}`)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
     }
-
-    // Clear saved messages
-    this.lastDistributionMessages = [];
-    this.lastChannelId = null;
-    
-    // Delete the saved messages file
-    if (fs.existsSync(this.messagesFilePath)) {
-      fs.unlinkSync(this.messagesFilePath);
-      console.log('🗑️ Deleted saved message IDs');
-    }
-
-    const embed = new EmbedBuilder()
-      .setColor(0xff0000)
-      .setTitle('✅ Reset Complete')
-      .setDescription(`All manual assignments and exclusions cleared\nBase distribution restored\nSaved messages cleared\nPlayers: ${this.playersData.length}\n\n_Next /swap will create a new distribution message_`)
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [embed] });
   }
 
   /**
@@ -523,16 +563,17 @@ export class DiscordBot {
     const channel = interaction.options.getChannel('channel');
 
     try {
-      // Parse datetime (YYYY-MM-DD HH:MM)
+      // Parse datetime (YYYY-MM-DD HH:MM) in UTC
       const [datePart, timePart] = datetime.split(' ');
       const [year, month, day] = datePart.split('-').map(Number);
       const [hour, minute] = timePart.split(':').map(Number);
 
-      const scheduledDate = new Date(year, month - 1, day, hour, minute);
+      // Create date in UTC
+      const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
       const now = new Date();
 
       if (scheduledDate <= now) {
-        await interaction.editReply('❌ The scheduled time must be in the future!');
+        await interaction.editReply('❌ The scheduled time must be in the future (UTC)!');
         return;
       }
 
@@ -577,7 +618,7 @@ export class DiscordBot {
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
         .setTitle('✅ Distribution Scheduled')
-        .setDescription(`The distribution will be posted in ${channel} at ${datetime}\n\n**Preview of the message:**`)
+        .setDescription(`The distribution will be posted in ${channel} at **${datetime} UTC**\n\n**Preview of the message:**`)
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
@@ -622,8 +663,8 @@ export class DiscordBot {
     const discordUser = interaction.options.getUser('discord_id');
 
     try {
-      // Write to DiscordMap sheet
-      await writeDiscordMapping(ingameId, discordUser.id);
+      // Write to DiscordMap sheet with username
+      await writeDiscordMapping(ingameId, discordUser.id, discordUser.username);
 
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
@@ -631,7 +672,8 @@ export class DiscordBot {
         .setDescription(`Successfully mapped **${ingameId}** to ${discordUser}`)
         .addFields(
           { name: 'In-game ID', value: ingameId, inline: true },
-          { name: 'Discord User', value: `${discordUser.tag} (${discordUser.id})`, inline: true }
+          { name: 'Discord User', value: `${discordUser.tag} (${discordUser.id})`, inline: true },
+          { name: 'Username', value: `@${discordUser.username}`, inline: true }
         )
         .setTimestamp();
 
@@ -693,7 +735,7 @@ export class DiscordBot {
         },
         {
           name: '8️⃣ `/schedule datetime:DATE channel:CHANNEL`',
-          value: '**Schedule automatic distribution posting**\nExample: `/schedule datetime:2024-12-25 14:30 channel:#announcements`\n*Format: YYYY-MM-DD HH:MM*',
+          value: '**Schedule automatic distribution posting**\nExample: `/schedule datetime:2024-12-25 14:30 channel:#announcements`\n*Format: YYYY-MM-DD HH:MM (UTC timezone)*',
           inline: false
         },
         {
@@ -714,58 +756,242 @@ export class DiscordBot {
   }
 
   /**
-   * Handle /done command
+   * Calculate similarity between two strings (Levenshtein distance)
+   * Returns a value between 0 and 1 (1 = identical)
+   */
+  calculateSimilarity(str1, str2) {
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    
+    if (longer.length === 0) return 1.0;
+    
+    const editDistance = this.levenshteinDistance(longer, shorter);
+    return (longer.length - editDistance) / longer.length;
+  }
+  
+  /**
+   * Calculate Levenshtein distance between two strings
+   */
+  levenshteinDistance(str1, str2) {
+    const matrix = [];
+    
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+    
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+    
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+    
+    return matrix[str2.length][str1.length];
+  }
+
+  /**
+   * Handle /done command - Add/remove checkmarks in swap message
    */
   async handleDone(interaction) {
     const playersInput = interaction.options.getString('players');
     const action = interaction.options.getString('action');
 
     try {
-      // Split player names by comma and trim whitespace
-      const playerNames = playersInput.split(',').map(name => name.trim()).filter(name => name.length > 0);
+      console.log(`📝 handleDone: Input = "${playersInput}", Action = "${action}"`);
+      
+      // Check if distribution messages exist
+      if (this.lastDistributionMessages.length === 0) {
+        await interaction.editReply('❌ No swap message found. Please run `/swap` first.');
+        return;
+      }
+      
+      // Split player mentions by comma
+      const playerMentions = playersInput.split(',').map(name => name.trim()).filter(name => name.length > 0);
+      console.log(`📝 Processing ${playerMentions.length} player(s)`);
       
       const successPlayers = [];
       const failedPlayers = [];
 
-      // Mark or unmark players
-      for (const playerName of playerNames) {
+      // Read all current messages
+      const allMessages = [];
+      for (const msg of this.lastDistributionMessages) {
         try {
-          if (action === 'add') {
-            this.distributionManager.markPlayerAsDone(playerName);
-          } else {
-            this.distributionManager.unmarkPlayerAsDone(playerName);
-          }
-          successPlayers.push(playerName);
+          const fetchedMsg = await msg.fetch();
+          allMessages.push({ msg: fetchedMsg, content: fetchedMsg.content });
+          console.log(`📄 Message content (first 200 chars): ${fetchedMsg.content.substring(0, 200)}`);
         } catch (error) {
-          failedPlayers.push(`${playerName} (${error.message})`);
+          console.error(`❌ Failed to fetch message: ${error.message}`);
+        }
+      }
+      
+      if (allMessages.length === 0) {
+        await interaction.editReply('❌ Could not read swap messages.');
+        return;
+      }
+
+      // Process each player mention
+      for (const mention of playerMentions) {
+        console.log(`🔍 Searching for: "${mention}"`);
+        
+        let username = null;
+        
+        // Check if it's a mention or plain text
+        const mentionMatch = mention.match(/<@!?(\d+)>/);
+        
+        if (mentionMatch) {
+          // It's a mention - fetch username from Discord
+          const discordId = mentionMatch[1];
+          console.log(`✅ Extracted Discord ID: ${discordId}`);
+          
+          try {
+            const user = await interaction.client.users.fetch(discordId);
+            username = user.username;
+            console.log(`✅ Fetched username from Discord: ${username}`);
+          } catch (error) {
+            console.error(`❌ Could not fetch user: ${error.message}`);
+            failedPlayers.push(`${mention} (Could not fetch user info)`);
+            continue;
+          }
+        } else {
+          // It's plain text - use it directly
+          username = mention.trim();
+          console.log(`✅ Using plain text as username: ${username}`);
+        }
+        
+        let found = false;
+        let matchedName = null;
+        
+        // Search in all messages for username (without @) with fuzzy matching
+        for (const msgData of allMessages) {
+          let content = msgData.content;
+          
+          console.log(`🔍 Searching for username: "${username}" (without @)`);
+          console.log(`📄 Original content (first 200 chars): ${content.substring(0, 200)}`);
+          
+          // Convert all mentions in content to @username format
+          const mentionRegex = /<@!?(\d+)>/g;
+          const mentions = content.match(mentionRegex);
+          
+          if (mentions) {
+            for (const mention of mentions) {
+              const idMatch = mention.match(/<@!?(\d+)>/);
+              if (idMatch) {
+                try {
+                  const user = await interaction.client.users.fetch(idMatch[1]);
+                  // Replace <@123> with @username
+                  content = content.replace(mention, `@${user.username}`);
+                } catch (error) {
+                  console.error(`⚠️ Could not fetch user ${idMatch[1]}`);
+                }
+              }
+            }
+            console.log(`📄 Converted content (first 200 chars): ${content.substring(0, 200)}`);
+          }
+          
+          // Split content into lines and search for the username
+          const lines = content.split('\n');
+          const usernameLower = username.toLowerCase();
+          
+          for (const line of lines) {
+            // Extract names from lines (format: • name - value or - name value)
+            // Match pattern: [bullet] [name with possible clan tag] [- value]
+            const nameMatch = line.match(/[•\-]\s*(@?)([^\-\n]+?)(?:\s*\-|$)/);
+            if (nameMatch) {
+              const fullName = nameMatch[2].trim();
+              // Remove @ if present
+              const nameWithoutAt = fullName.startsWith('@') ? fullName.substring(1) : fullName;
+              // Extract first word only (before any space or special character)
+              const firstWord = nameWithoutAt.split(/\s+/)[0].toLowerCase();
+              
+              console.log(`🔍 Comparing "${usernameLower}" with "${firstWord}" (from "${fullName}")`);
+              
+              // Calculate similarity between username and first word only
+              const similarity = this.calculateSimilarity(usernameLower, firstWord);
+              
+              if (similarity >= 0.95) {
+                console.log(`✅ Found similar name: "${fullName}" (similarity: ${(similarity * 100).toFixed(1)}%)`);
+                matchedName = nameMatch[0].trim(); // Keep the full match (• name or - name)
+                found = true;
+                
+                if (action === 'add') {
+                  // Add checkmark at the end of the line
+                  if (!line.includes('✅')) {
+                    // Add checkmark at the end of the line (before newline)
+                    const newLine = line.trimEnd() + ' ✅';
+                    content = content.replace(line, newLine);
+                    msgData.content = content;
+                    console.log(`✅ Added checkmark at end of line for: ${nameMatch[2]}`);
+                  } else {
+                    console.log(`⚠️ Checkmark already exists`);
+                  }
+                } else {
+                  // Remove checkmark from end of line
+                  if (line.includes('✅')) {
+                    const newLine = line.replace(' ✅', '');
+                    content = content.replace(line, newLine);
+                    msgData.content = content;
+                    console.log(`✅ Removed checkmark for: ${nameMatch[2]}`);
+                  } else {
+                    console.log(`⚠️ No checkmark to remove`);
+                  }
+                }
+                
+                successPlayers.push(mention);
+                break;
+              }
+            }
+          }
+          
+          if (found) break;
+        }
+        
+        if (!found) {
+          failedPlayers.push(`${mention} (Not found in swap list)`);
+          console.error(`❌ Player "${username}" not found in messages`);
         }
       }
 
-      // Update the last distribution messages
-      if (this.lastDistributionMessages.length > 0) {
-        const formattedText = this.distributionManager.getFormattedDistribution();
-        await this.updateDistributionMessages(formattedText);
-
-        let description = '';
-        if (successPlayers.length > 0) {
-          const actionText = action === 'add' ? 'marked as done' : 'unmarked';
-          description += `**Players ${actionText}:**\n${successPlayers.map(p => `• ${p}`).join('\n')}`;
+      // Update all modified messages
+      for (const msgData of allMessages) {
+        try {
+          await msgData.msg.edit(msgData.content);
+          console.log(`✅ Updated message`);
+        } catch (error) {
+          console.error(`❌ Failed to update message: ${error.message}`);
         }
-        if (failedPlayers.length > 0) {
-          description += `\n\n**Failed:**\n${failedPlayers.map(p => `• ${p}`).join('\n')}`;
-        }
-
-        const embed = new EmbedBuilder()
-          .setColor(successPlayers.length > 0 ? 0x00ff00 : 0xff0000)
-          .setTitle(successPlayers.length > 0 ? '✅ Players Updated' : '❌ Update Failed')
-          .setDescription(description)
-          .setTimestamp();
-
-        await interaction.editReply({ embeds: [embed] });
-      } else {
-        await interaction.editReply('❌ No distribution message found. Please run `/swap` first.');
       }
+
+      // Send response
+      let description = '';
+      if (successPlayers.length > 0) {
+        const actionText = action === 'add' ? 'marked as done' : 'unmarked';
+        description += `**Players ${actionText}:**\n${successPlayers.map(p => `• ${p}`).join('\n')}`;
+      }
+      if (failedPlayers.length > 0) {
+        description += `\n\n**Failed:**\n${failedPlayers.map(p => `• ${p}`).join('\n')}`;
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(successPlayers.length > 0 ? 0x00ff00 : 0xff0000)
+        .setTitle(successPlayers.length > 0 ? '✅ Players Updated' : '❌ Update Failed')
+        .setDescription(description)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+      
     } catch (error) {
+      console.error(`❌ Error in handleDone: ${error.message}`);
       const embed = new EmbedBuilder()
         .setColor(0xff0000)
         .setTitle('❌ Failed')
@@ -780,6 +1006,10 @@ export class DiscordBot {
    * Update existing distribution messages
    */
   async updateDistributionMessages(text) {
+    console.log(`📝 updateDistributionMessages: Updating ${this.lastDistributionMessages.length} messages`);
+    console.log(`📝 Text length: ${text.length} characters`);
+    console.log(`📝 First 200 chars: ${text.substring(0, 200)}`);
+    
     const maxLength = 2000;
     const chunks = [];
     
@@ -799,14 +1029,20 @@ export class DiscordBot {
       chunks.push(currentChunk);
     }
 
+    console.log(`📝 Split into ${chunks.length} chunks`);
+
     // Update existing messages or send new ones if needed
     for (let i = 0; i < chunks.length; i++) {
       if (i < this.lastDistributionMessages.length) {
         try {
+          console.log(`✅ Updating message ${i + 1}/${chunks.length}`);
           await this.lastDistributionMessages[i].edit(chunks[i]);
+          console.log(`✅ Message ${i + 1} updated successfully`);
         } catch (error) {
-          console.error('Failed to edit message:', error);
+          console.error(`❌ Failed to edit message ${i + 1}:`, error.message);
         }
+      } else {
+        console.log(`⚠️ No message ${i + 1} to update (only ${this.lastDistributionMessages.length} messages saved)`);
       }
     }
   }
