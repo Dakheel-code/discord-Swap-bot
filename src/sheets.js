@@ -17,9 +17,31 @@ export async function initializeSheetsClient() {
     });
     
     // Try to initialize Service Account for write operations
-    if (config.googleSheets.serviceAccountPath && fs.existsSync(config.googleSheets.serviceAccountPath)) {
+    let credentials = null;
+    
+    // Method 1: Try to read from environment variable (for Railway/Heroku)
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
       try {
-        const credentials = JSON.parse(fs.readFileSync(config.googleSheets.serviceAccountPath, 'utf8'));
+        credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+        console.log('✅ Service Account loaded from environment variable');
+      } catch (parseError) {
+        console.error('❌ Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON:', parseError.message);
+      }
+    }
+    
+    // Method 2: Try to read from file (for local development)
+    if (!credentials && config.googleSheets.serviceAccountPath && fs.existsSync(config.googleSheets.serviceAccountPath)) {
+      try {
+        credentials = JSON.parse(fs.readFileSync(config.googleSheets.serviceAccountPath, 'utf8'));
+        console.log('✅ Service Account loaded from file');
+      } catch (fileError) {
+        console.error('❌ Failed to read service account file:', fileError.message);
+      }
+    }
+    
+    // Initialize auth if credentials are available
+    if (credentials) {
+      try {
         const auth = new google.auth.GoogleAuth({
           credentials,
           scopes: ['https://www.googleapis.com/auth/spreadsheets'],
@@ -28,11 +50,12 @@ export async function initializeSheetsClient() {
         sheetsClientWithAuth = google.sheets({ version: 'v4', auth });
         console.log('✅ Google Sheets API initialized with write access');
       } catch (authError) {
-        console.warn('⚠️ Service Account not configured. Write operations will fail.');
-        console.warn('   To enable /map command, add GOOGLE_SERVICE_ACCOUNT_PATH to .env');
+        console.error('❌ Failed to initialize auth:', authError.message);
       }
     } else {
-      console.warn('⚠️ Service Account not found. Read-only mode.');
+      console.warn('⚠️ Service Account not configured. Write operations will fail.');
+      console.warn('   Add GOOGLE_SERVICE_ACCOUNT_JSON to environment variables');
+      console.warn('   OR add GOOGLE_SERVICE_ACCOUNT_PATH to .env file');
     }
     
     console.log('✅ Google Sheets API initialized successfully');
