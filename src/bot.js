@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
 import { config } from './config.js';
 import { commands } from './commands.js';
 import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions } from './sheets.js';
@@ -269,9 +269,19 @@ export class DiscordBot {
   }
 
   /**
-   * Handle interactions (slash commands)
+   * Handle interactions (slash commands, buttons, select menus)
    */
   async onInteraction(interaction) {
+    // Handle button interactions
+    if (interaction.isButton()) {
+      return await this.handleButtonInteraction(interaction);
+    }
+    
+    // Handle select menu interactions
+    if (interaction.isStringSelectMenu()) {
+      return await this.handleSelectMenuInteraction(interaction);
+    }
+    
     if (!interaction.isChatInputCommand()) return;
 
     const commandName = interaction.commandName;
@@ -342,6 +352,201 @@ export class DiscordBot {
       const errorMessage = error.message || 'An error occurred';
       await interaction.editReply(`❌ Error: ${errorMessage}`);
     }
+  }
+
+  /**
+   * Handle button interactions
+   */
+  async handleButtonInteraction(interaction) {
+    const customId = interaction.customId;
+    
+    try {
+      await interaction.deferReply({ ephemeral: true });
+      
+      switch (customId) {
+        case 'show_swaps_left':
+          await this.handleSwapsLeftButton(interaction);
+          break;
+        
+        case 'refresh_data':
+          await this.handleRefreshButton(interaction);
+          break;
+        
+        case 'mark_done':
+          await this.handleMarkDoneButton(interaction);
+          break;
+        
+        default:
+          await interaction.editReply('❌ Unknown button');
+      }
+    } catch (error) {
+      console.error(`❌ Error handling button ${customId}:`, error);
+      await interaction.editReply(`❌ Error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle select menu interactions
+   */
+  async handleSelectMenuInteraction(interaction) {
+    const customId = interaction.customId;
+    
+    try {
+      await interaction.deferReply({ ephemeral: true });
+      
+      if (customId === 'select_players_done') {
+        await this.handleSelectPlayersDone(interaction);
+      } else {
+        await interaction.editReply('❌ Unknown select menu');
+      }
+    } catch (error) {
+      console.error(`❌ Error handling select menu ${customId}:`, error);
+      await interaction.editReply(`❌ Error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle "Show Swaps Left" button
+   */
+  async handleSwapsLeftButton(interaction) {
+    // Check if distribution exists
+    if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
+      await interaction.editReply('⚠️ No distribution found. Please run `/swap` first.');
+      return;
+    }
+
+    // Get the swaps left text
+    const swapsLeftText = this.distributionManager.getSwapsLeft();
+
+    // Send the list
+    await interaction.editReply('📋 **Swaps Left:**');
+    await interaction.followUp({ content: swapsLeftText, ephemeral: true });
+  }
+
+  /**
+   * Handle "Refresh" button
+   */
+  async handleRefreshButton(interaction) {
+    // Refresh data from Google Sheets
+    this.playersData = await fetchPlayersDataWithDiscordNames();
+    
+    // Re-distribute
+    const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+    this.distributionManager.distribute(this.playersData, sortColumn);
+    
+    // Update messages
+    const formattedText = this.distributionManager.getFormattedDistribution();
+    await this.updateDistributionMessages(formattedText);
+    
+    await interaction.editReply('✅ Data refreshed and distribution updated!');
+  }
+
+  /**
+   * Handle "Mark Done" button
+   */
+  async handleMarkDoneButton(interaction) {
+    // Check if distribution exists
+    if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
+      await interaction.editReply('⚠️ No distribution found. Please run `/swap` first.');
+      return;
+    }
+
+    // Get all players who are not done yet
+    const playersNotDone = [];
+    
+    ['RGR', 'OTL', 'RND'].forEach(groupName => {
+      if (this.distributionManager.groups[groupName]) {
+        this.distributionManager.groups[groupName].forEach(player => {
+          const name = player.DiscordName || this.distributionManager.getPlayerName(player);
+          const identifier = this.distributionManager.getPlayerIdentifier(player);
+          
+          let isDone = this.distributionManager.completedPlayers.has(identifier);
+          if (!isDone && player.DiscordName) {
+            isDone = this.distributionManager.completedPlayers.has(player.DiscordName);
+          }
+          
+          if (!isDone) {
+            playersNotDone.push({
+              name: name,
+              clan: groupName,
+              identifier: identifier
+            });
+          }
+        });
+      }
+    });
+
+    if (playersNotDone.length === 0) {
+      await interaction.editReply('✅ All players have moved!');
+      return;
+    }
+
+    // Create select menu (max 25 options)
+    const options = playersNotDone.slice(0, 25).map(player => ({
+      label: `${player.name} → ${player.clan}`,
+      value: player.identifier,
+      emoji: '👤'
+    }));
+
+    const selectMenu = new StringSelectMenuBuilder()
+      .setCustomId('select_players_done')
+      .setPlaceholder('Select players to mark as done')
+      .setMinValues(1)
+      .setMaxValues(Math.min(options.length, 25))
+      .addOptions(options);
+
+    const row = new ActionRowBuilder().addComponents(selectMenu);
+
+    await interaction.editReply({
+      content: `Select players to mark as done (${playersNotDone.length} remaining):`,
+      components: [row]
+    });
+  }
+
+  /**
+   * Handle player selection from select menu
+   */
+  async handleSelectPlayersDone(interaction) {
+    const selectedIdentifiers = interaction.values;
+    
+    // Mark selected players as done
+    selectedIdentifiers.forEach(identifier => {
+      this.distributionManager.completedPlayers.add(identifier);
+    });
+
+    // Update distribution messages
+    const formattedText = this.distributionManager.getFormattedDistribution();
+    await this.updateDistributionMessages(formattedText);
+
+    // Update swapsleft messages if they exist
+    if (this.lastSwapsLeftMessages && this.lastSwapsLeftMessages.length > 0) {
+      const swapsLeftText = this.distributionManager.getSwapsLeft();
+      const maxLength = 2000;
+      const chunks = [];
+      
+      let currentChunk = '';
+      const lines = swapsLeftText.split('\n');
+      
+      for (const line of lines) {
+        if ((currentChunk + line + '\n').length > maxLength) {
+          if (currentChunk) chunks.push(currentChunk);
+          currentChunk = line + '\n';
+        } else {
+          currentChunk += line + '\n';
+        }
+      }
+      if (currentChunk) chunks.push(currentChunk);
+
+      for (let i = 0; i < Math.min(chunks.length, this.lastSwapsLeftMessages.length); i++) {
+        try {
+          await this.lastSwapsLeftMessages[i].edit(chunks[i]);
+        } catch (error) {
+          console.error(`❌ Failed to update swapsleft message ${i + 1}: ${error.message}`);
+        }
+      }
+    }
+
+    await interaction.editReply(`✅ Marked ${selectedIdentifiers.length} player(s) as done!`);
   }
 
   /**
@@ -420,8 +625,8 @@ export class DiscordBot {
         ephemeral: true
       });
     } else {
-      // Create new messages
-      await this.sendLongMessage(interaction.channel, formattedText, true);
+      // Create new messages with interactive buttons
+      await this.sendLongMessage(interaction.channel, formattedText, true, true);
     }
   }
 
@@ -1342,9 +1547,37 @@ export class DiscordBot {
   }
 
   /**
+   * Create interactive buttons for distribution message
+   */
+  createDistributionButtons() {
+    const row = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('show_swaps_left')
+          .setLabel('Show Swaps Left')
+          .setEmoji('📋')
+          .setStyle(ButtonStyle.Primary),
+        
+        new ButtonBuilder()
+          .setCustomId('refresh_data')
+          .setLabel('Refresh')
+          .setEmoji('🔄')
+          .setStyle(ButtonStyle.Secondary),
+        
+        new ButtonBuilder()
+          .setCustomId('mark_done')
+          .setLabel('Mark Done')
+          .setEmoji('✅')
+          .setStyle(ButtonStyle.Success)
+      );
+    
+    return row;
+  }
+
+  /**
    * Send long message in chunks
    */
-  async sendLongMessage(channel, text, saveMessages = false) {
+  async sendLongMessage(channel, text, saveMessages = false, addButtons = false) {
     const maxLength = 2000;
     const chunks = [];
     
@@ -1372,8 +1605,17 @@ export class DiscordBot {
       this.lastChannelId = channel.id;
     }
 
-    for (const chunk of chunks) {
-      const message = await channel.send(chunk);
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const isLastChunk = i === chunks.length - 1;
+      
+      // Add buttons to the last chunk if requested
+      const messageOptions = { content: chunk };
+      if (addButtons && isLastChunk) {
+        messageOptions.components = [this.createDistributionButtons()];
+      }
+      
+      const message = await channel.send(messageOptions);
       sentMessages.push(message);
       if (saveMessages) {
         this.lastDistributionMessages.push(message);
