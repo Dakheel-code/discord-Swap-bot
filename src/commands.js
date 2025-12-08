@@ -91,8 +91,31 @@ export const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName('cancelschedule')
-    .setDescription('Cancel scheduled distribution'),
+    .setName('manageschedule')
+    .setDescription('Manage scheduled distribution')
+    .addStringOption(option =>
+      option
+        .setName('action')
+        .setDescription('What to do with the schedule')
+        .setRequired(true)
+        .addChoices(
+          { name: 'View Schedule', value: 'view' },
+          { name: 'Edit Schedule', value: 'edit' },
+          { name: 'Delete Schedule', value: 'delete' }
+        )
+    )
+    .addStringOption(option =>
+      option
+        .setName('datetime')
+        .setDescription('New date and time in UTC (for edit only)')
+        .setRequired(false)
+    )
+    .addChannelOption(option =>
+      option
+        .setName('channel')
+        .setDescription('New channel (for edit only)')
+        .setRequired(false)
+    ),
 
   new SlashCommandBuilder()
     .setName('help')

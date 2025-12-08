@@ -324,8 +324,8 @@ export class DiscordBot {
           await this.handleSchedule(interaction);
           break;
 
-        case 'cancelschedule':
-          await this.handleCancelSchedule(interaction);
+        case 'manageschedule':
+          await this.handleManageSchedule(interaction);
           break;
 
         case 'help':
@@ -1040,9 +1040,184 @@ export class DiscordBot {
   }
 
   /**
-   * Handle /cancelschedule command
+   * Handle /manageschedule command
    */
-  async handleCancelSchedule(interaction) {
+  async handleManageSchedule(interaction) {
+    const action = interaction.options.getString('action');
+    
+    try {
+      switch (action) {
+        case 'view':
+          await this.handleViewSchedule(interaction);
+          break;
+        
+        case 'edit':
+          await this.handleEditSchedule(interaction);
+          break;
+        
+        case 'delete':
+          await this.handleDeleteSchedule(interaction);
+          break;
+        
+        default:
+          await interaction.editReply('❌ Unknown action');
+      }
+    } catch (error) {
+      console.error(`❌ Error in handleManageSchedule: ${error.message}`);
+      await interaction.editReply(`❌ Error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle view schedule action
+   */
+  async handleViewSchedule(interaction) {
+    if (!this.scheduledData) {
+      await interaction.editReply('❌ No scheduled distribution found');
+      return;
+    }
+
+    // Calculate time remaining
+    const [datePart, timePart] = this.scheduledData.datetime.split(' ');
+    const [year, month, day] = datePart.split('-').map(Number);
+    const [hour, minute] = timePart.split(':').map(Number);
+    const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+    const now = new Date();
+    const timeRemaining = scheduledDate.getTime() - now.getTime();
+    const minutesRemaining = Math.round(timeRemaining / 1000 / 60);
+    const hoursRemaining = Math.floor(minutesRemaining / 60);
+    const minsRemaining = minutesRemaining % 60;
+
+    // Get channel
+    let channelMention = `<#${this.scheduledData.channelId}>`;
+    try {
+      const channel = await this.client.channels.fetch(this.scheduledData.channelId);
+      channelMention = `${channel}`;
+    } catch (error) {
+      console.warn('Could not fetch channel');
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0x00ff00)
+      .setTitle('📅 Scheduled Distribution')
+      .setDescription('Current schedule information:')
+      .addFields(
+        { name: '📅 Date & Time', value: `${this.scheduledData.datetime} UTC`, inline: false },
+        { name: '📺 Channel', value: channelMention, inline: false },
+        { name: '⏰ Time Remaining', value: `${hoursRemaining}h ${minsRemaining}m`, inline: false }
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  }
+
+  /**
+   * Handle edit schedule action
+   */
+  async handleEditSchedule(interaction) {
+    if (!this.scheduledData) {
+      await interaction.editReply('❌ No scheduled distribution found to edit');
+      return;
+    }
+
+    const newDatetime = interaction.options.getString('datetime');
+    const newChannel = interaction.options.getChannel('channel');
+
+    if (!newDatetime && !newChannel) {
+      await interaction.editReply('❌ Please provide at least one parameter to edit (datetime or channel)');
+      return;
+    }
+
+    // Update datetime if provided
+    if (newDatetime) {
+      try {
+        // Validate datetime format
+        const [datePart, timePart] = newDatetime.split(' ');
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hour, minute] = timePart.split(':').map(Number);
+        const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+        const now = new Date();
+
+        if (scheduledDate <= now) {
+          await interaction.editReply('❌ The scheduled time must be in the future (UTC)!');
+          return;
+        }
+
+        // Cancel old timeout
+        if (this.scheduledPost) {
+          clearTimeout(this.scheduledPost);
+        }
+
+        // Update schedule data
+        this.scheduledData.datetime = newDatetime;
+
+        // Create new timeout
+        const delay = scheduledDate.getTime() - now.getTime();
+        const minutesUntil = Math.round(delay / 1000 / 60);
+
+        const channelId = newChannel ? newChannel.id : this.scheduledData.channelId;
+        const channel = await this.client.channels.fetch(channelId);
+
+        this.scheduledPost = setTimeout(async () => {
+          try {
+            console.log('🔄 Refreshing data from Google Sheets before scheduled post...');
+            this.playersData = await fetchPlayersDataWithDiscordNames();
+            
+            const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+            this.distributionManager.distribute(this.playersData, sortColumn);
+            console.log(`✅ Data refreshed: ${this.playersData.length} players`);
+            
+            const formattedText = this.distributionManager.getFormattedDistribution();
+            
+            if (formattedText && formattedText.length > 50) {
+              await this.sendLongMessage(channel, formattedText, true, true);
+              console.log(`✅ Scheduled post sent to ${channel.name}`);
+            } else {
+              console.error('❌ No distribution data to send');
+              await channel.send('❌ Error: No distribution data available. Please run /swap first.');
+            }
+
+            // Clean up after sending
+            this.deleteSchedule();
+            this.scheduledPost = null;
+          } catch (error) {
+            console.error('❌ Error sending scheduled post:', error);
+            await channel.send('❌ Error sending scheduled distribution. Please check bot logs.');
+          }
+        }, delay);
+
+        console.log(`⏰ Schedule updated: Will post in ${minutesUntil} minutes (${newDatetime} UTC)`);
+      } catch (error) {
+        await interaction.editReply('❌ Invalid datetime format! Use: YYYY-MM-DD HH:MM (e.g., 2024-12-25 14:30)');
+        return;
+      }
+    }
+
+    // Update channel if provided
+    if (newChannel) {
+      this.scheduledData.channelId = newChannel.id;
+    }
+
+    // Save updated schedule
+    this.saveSchedule();
+
+    const embed = new EmbedBuilder()
+      .setColor(0x00ff00)
+      .setTitle('✅ Schedule Updated')
+      .setDescription('The scheduled distribution has been updated:')
+      .addFields(
+        { name: '📅 Date & Time', value: `${this.scheduledData.datetime} UTC`, inline: false },
+        { name: '📺 Channel', value: newChannel ? `${newChannel}` : 'Unchanged', inline: false }
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  }
+
+  /**
+   * Handle delete schedule action
+   */
+  async handleDeleteSchedule(interaction) {
     if (this.scheduledPost) {
       clearTimeout(this.scheduledPost);
       this.scheduledPost = null;
@@ -1052,7 +1227,7 @@ export class DiscordBot {
 
       const embed = new EmbedBuilder()
         .setColor(0xff9900)
-        .setTitle('✅ Schedule Cancelled')
+        .setTitle('✅ Schedule Deleted')
         .setDescription('The scheduled distribution has been cancelled')
         .setTimestamp();
 
@@ -1146,8 +1321,8 @@ export class DiscordBot {
           inline: false
         },
         {
-          name: '9️⃣ `/cancelschedule`',
-          value: '**Cancel scheduled distribution**\nCancels any pending scheduled posts',
+          name: '9️⃣ `/manageschedule action:view/edit/delete`',
+          value: '**Manage scheduled distribution**\n• `view` - Show current schedule\n• `edit` - Modify datetime or channel\n• `delete` - Cancel schedule\nExample: `/manageschedule action:view`',
           inline: false
         },
         {
