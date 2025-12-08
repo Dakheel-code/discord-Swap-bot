@@ -1344,6 +1344,8 @@ export class DiscordBot {
       chunks.push(currentChunk);
     }
 
+    const sentMessages = [];
+
     // Clear previous messages if saving new ones
     if (saveMessages) {
       this.lastDistributionMessages = [];
@@ -1352,6 +1354,7 @@ export class DiscordBot {
 
     for (const chunk of chunks) {
       const message = await channel.send(chunk);
+      sentMessages.push(message);
       if (saveMessages) {
         this.lastDistributionMessages.push(message);
       }
@@ -1361,5 +1364,7 @@ export class DiscordBot {
     if (saveMessages) {
       this.saveMessageIds();
     }
+
+    return sentMessages;
   }
 }
