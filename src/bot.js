@@ -69,11 +69,12 @@ export class DiscordBot {
     try {
       const data = {
         channelId: this.lastChannelId,
-        messageIds: this.lastDistributionMessages.map(msg => msg.id),
+        distributionMessageIds: this.lastDistributionMessages.map(msg => msg.id),
+        swapsLeftMessageIds: this.lastSwapsLeftMessages.map(msg => msg.id),
         timestamp: Date.now()
       };
       fs.writeFileSync(this.messagesFilePath, JSON.stringify(data, null, 2));
-      console.log('💾 Saved distribution message IDs');
+      console.log('💾 Saved distribution and swapsleft message IDs');
     } catch (error) {
       console.error('❌ Failed to save message IDs:', error);
     }
@@ -95,16 +96,32 @@ export class DiscordBot {
       // Fetch the actual message objects
       const channel = await this.client.channels.fetch(data.channelId);
       if (channel) {
+        // Load distribution messages
         this.lastDistributionMessages = [];
-        for (const messageId of data.messageIds) {
+        const distributionIds = data.distributionMessageIds || data.messageIds || []; // Support old format
+        for (const messageId of distributionIds) {
           try {
             const message = await channel.messages.fetch(messageId);
             this.lastDistributionMessages.push(message);
           } catch (error) {
-            console.warn(`⚠️ Could not fetch message ${messageId}`);
+            console.warn(`⚠️ Could not fetch distribution message ${messageId}`);
           }
         }
         console.log(`✅ Loaded ${this.lastDistributionMessages.length} distribution messages`);
+
+        // Load swapsleft messages
+        this.lastSwapsLeftMessages = [];
+        if (data.swapsLeftMessageIds && data.swapsLeftMessageIds.length > 0) {
+          for (const messageId of data.swapsLeftMessageIds) {
+            try {
+              const message = await channel.messages.fetch(messageId);
+              this.lastSwapsLeftMessages.push(message);
+            } catch (error) {
+              console.warn(`⚠️ Could not fetch swapsleft message ${messageId}`);
+            }
+          }
+          console.log(`✅ Loaded ${this.lastSwapsLeftMessages.length} swapsleft messages`);
+        }
       }
     } catch (error) {
       console.error('❌ Failed to load message IDs:', error);
@@ -1262,6 +1279,9 @@ export class DiscordBot {
       
       // Send the actual list and store messages
       this.lastSwapsLeftMessages = await this.sendLongMessage(interaction.channel, swapsLeftText);
+      
+      // Save message IDs to file
+      this.saveMessageIds();
       
       console.log(`✅ Swaps left list sent (${this.lastSwapsLeftMessages.length} messages)`);
     } catch (error) {
