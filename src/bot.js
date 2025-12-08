@@ -619,45 +619,91 @@ export class DiscordBot {
    */
   async handleReset(interaction) {
     try {
-      console.log('🔄 Resetting all data...');
+      const resetType = interaction.options.getString('type');
       
-      // Clear all actions from Master_CSV sheet
-      const result = await clearAllPlayerActions();
+      let description = '';
+      let title = '';
       
-      // Save current sort column
-      const currentSortColumn = this.distributionManager.sortColumn;
+      if (resetType === 'all') {
+        console.log('🔄 Resetting all data (Actions + Distribution)...');
+        
+        // Clear all actions from DiscordMap sheet
+        const result = await clearAllPlayerActions();
+        
+        // Save current sort column
+        const currentSortColumn = this.distributionManager.sortColumn;
 
-      // Refresh data from Google Sheets
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+        // Refresh data from Google Sheets
+        this.playersData = await fetchPlayersDataWithDiscordNames();
 
-      // Create new distribution manager
-      this.distributionManager = new DistributionManager();
+        // Create new distribution manager
+        this.distributionManager = new DistributionManager();
 
-      // Re-distribute if there was a previous distribution
-      if (this.playersData.length > 0 && currentSortColumn) {
-        this.distributionManager.distribute(this.playersData, currentSortColumn);
+        // Re-distribute if there was a previous distribution
+        if (this.playersData.length > 0 && currentSortColumn) {
+          this.distributionManager.distribute(this.playersData, currentSortColumn);
+        }
+
+        // Clear saved messages
+        this.lastDistributionMessages = [];
+        this.lastSwapsLeftMessages = [];
+        this.lastChannelId = null;
+        
+        // Delete the saved messages file
+        if (fs.existsSync(this.messagesFilePath)) {
+          fs.unlinkSync(this.messagesFilePath);
+          console.log('🗑️ Deleted saved message IDs');
+        }
+
+        title = '✅ Reset All Complete';
+        description = `**All settings have been reset:**\n\n`;
+        description += `✅ Cleared ${result.clearedCount} actions from DiscordMap (Column C)\n`;
+        description += `✅ Reset distribution manager\n`;
+        description += `✅ Cleared saved messages\n`;
+        description += `✅ Refreshed player data (${this.playersData.length} players)\n\n`;
+        description += `_All /move, /hold actions have been cleared_\n`;
+        description += `_Next /swap will create a new distribution message_`;
+        
+      } else if (resetType === 'swap') {
+        console.log('🔄 Resetting distribution only...');
+        
+        // Save current sort column
+        const currentSortColumn = this.distributionManager.sortColumn;
+
+        // Refresh data from Google Sheets (keeps actions)
+        this.playersData = await fetchPlayersDataWithDiscordNames();
+
+        // Create new distribution manager
+        this.distributionManager = new DistributionManager();
+
+        // Re-distribute if there was a previous distribution
+        if (this.playersData.length > 0 && currentSortColumn) {
+          this.distributionManager.distribute(this.playersData, currentSortColumn);
+        }
+
+        // Clear saved messages
+        this.lastDistributionMessages = [];
+        this.lastSwapsLeftMessages = [];
+        this.lastChannelId = null;
+        
+        // Delete the saved messages file
+        if (fs.existsSync(this.messagesFilePath)) {
+          fs.unlinkSync(this.messagesFilePath);
+          console.log('🗑️ Deleted saved message IDs');
+        }
+
+        title = '✅ Reset Distribution Complete';
+        description = `**Distribution has been reset:**\n\n`;
+        description += `✅ Reset distribution manager\n`;
+        description += `✅ Cleared saved messages\n`;
+        description += `✅ Refreshed player data (${this.playersData.length} players)\n\n`;
+        description += `⚠️ All /move, /hold actions are still active\n`;
+        description += `_Next /swap will create a new distribution message_`;
       }
-
-      // Clear saved messages
-      this.lastDistributionMessages = [];
-      this.lastChannelId = null;
-      
-      // Delete the saved messages file
-      if (fs.existsSync(this.messagesFilePath)) {
-        fs.unlinkSync(this.messagesFilePath);
-        console.log('🗑️ Deleted saved message IDs');
-      }
-
-      let description = `**All data has been reset:**\n\n`;
-      description += `✅ Cleared ${result.clearedCount} actions from DiscordMap (Column C)\n`;
-      description += `✅ Reset distribution manager\n`;
-      description += `✅ Cleared saved messages\n`;
-      description += `✅ Refreshed player data (${this.playersData.length} players)\n\n`;
-      description += `_Next /swap will create a new distribution message_`;
 
       const embed = new EmbedBuilder()
         .setColor(0xff0000)
-        .setTitle('✅ Reset Complete')
+        .setTitle(title)
         .setDescription(description)
         .setTimestamp();
 
@@ -868,8 +914,8 @@ export class DiscordBot {
           inline: false
         },
         {
-          name: '7️⃣ `/reset`',
-          value: '**Reset all manual changes**\nClears all manual assignments and exclusions',
+          name: '7️⃣ `/reset type:all/swap`',
+          value: '**Reset settings**\n• `all` - Clear all actions + distribution\n• `swap` - Clear distribution only (keep actions)\nExample: `/reset type:all`',
           inline: false
         },
         {

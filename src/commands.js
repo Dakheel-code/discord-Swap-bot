@@ -62,7 +62,17 @@ export const commands = [
 
   new SlashCommandBuilder()
     .setName('reset')
-    .setDescription('Reset all manual assignments and exclusions'),
+    .setDescription('Reset settings')
+    .addStringOption(option =>
+      option
+        .setName('type')
+        .setDescription('What to reset')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Reset All Settings (Actions + Distribution)', value: 'all' },
+          { name: 'Reset Distribution Only', value: 'swap' }
+        )
+    ),
 
   new SlashCommandBuilder()
     .setName('schedule')
