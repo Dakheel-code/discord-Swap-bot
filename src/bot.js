@@ -384,6 +384,22 @@ export class DiscordBot {
           await this.handleMarkDoneButton(interaction);
           break;
         
+        case 'mark_all_done':
+          await this.handleMarkAllDone(interaction);
+          break;
+        
+        case 'mark_rgr_done':
+          await this.handleMarkClanDone(interaction, 'RGR');
+          break;
+        
+        case 'mark_otl_done':
+          await this.handleMarkClanDone(interaction, 'OTL');
+          break;
+        
+        case 'mark_rnd_done':
+          await this.handleMarkClanDone(interaction, 'RND');
+          break;
+        
         default:
           await interaction.editReply('❌ Unknown button');
       }
@@ -503,11 +519,39 @@ export class DiscordBot {
       .setMaxValues(Math.min(options.length, 25))
       .addOptions(options);
 
-    const row = new ActionRowBuilder().addComponents(selectMenu);
+    // Create buttons for marking all or by clan
+    const buttonsRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('mark_all_done')
+          .setLabel('Mark All Done')
+          .setEmoji('✅')
+          .setStyle(ButtonStyle.Success),
+        
+        new ButtonBuilder()
+          .setCustomId('mark_rgr_done')
+          .setLabel('RGR Done')
+          .setEmoji('🏆')
+          .setStyle(ButtonStyle.Primary),
+        
+        new ButtonBuilder()
+          .setCustomId('mark_otl_done')
+          .setLabel('OTL Done')
+          .setEmoji('🏆')
+          .setStyle(ButtonStyle.Primary),
+        
+        new ButtonBuilder()
+          .setCustomId('mark_rnd_done')
+          .setLabel('RND Done')
+          .setEmoji('🏆')
+          .setStyle(ButtonStyle.Primary)
+      );
+
+    const selectRow = new ActionRowBuilder().addComponents(selectMenu);
 
     await interaction.editReply({
       content: `Select players to mark as done (${playersNotDone.length} remaining):`,
-      components: [row]
+      components: [buttonsRow, selectRow]
     });
   }
 
@@ -555,6 +599,142 @@ export class DiscordBot {
     }
 
     await interaction.editReply(`✅ Marked ${selectedIdentifiers.length} player(s) as done!`);
+  }
+
+  /**
+   * Handle "Mark All Done" button
+   */
+  async handleMarkAllDone(interaction) {
+    // Get all players who are not done yet
+    const playersToMark = [];
+    
+    ['RGR', 'OTL', 'RND'].forEach(groupName => {
+      if (this.distributionManager.groups[groupName]) {
+        this.distributionManager.groups[groupName].forEach(player => {
+          const identifier = this.distributionManager.getPlayerIdentifier(player);
+          
+          let isDone = this.distributionManager.completedPlayers.has(identifier);
+          if (!isDone && player.DiscordName) {
+            isDone = this.distributionManager.completedPlayers.has(player.DiscordName);
+          }
+          
+          if (!isDone) {
+            playersToMark.push(identifier);
+          }
+        });
+      }
+    });
+
+    if (playersToMark.length === 0) {
+      await interaction.editReply('✅ All players are already marked as done!');
+      return;
+    }
+
+    // Mark all players as done
+    playersToMark.forEach(identifier => {
+      this.distributionManager.completedPlayers.add(identifier);
+    });
+
+    // Update messages
+    const formattedText = this.distributionManager.getFormattedDistribution();
+    await this.updateDistributionMessages(formattedText);
+
+    // Update swapsleft messages
+    if (this.lastSwapsLeftMessages && this.lastSwapsLeftMessages.length > 0) {
+      const swapsLeftText = this.distributionManager.getSwapsLeft();
+      const maxLength = 2000;
+      const chunks = [];
+      
+      let currentChunk = '';
+      const lines = swapsLeftText.split('\n');
+      
+      for (const line of lines) {
+        if ((currentChunk + line + '\n').length > maxLength) {
+          if (currentChunk) chunks.push(currentChunk);
+          currentChunk = line + '\n';
+        } else {
+          currentChunk += line + '\n';
+        }
+      }
+      if (currentChunk) chunks.push(currentChunk);
+
+      for (let i = 0; i < Math.min(chunks.length, this.lastSwapsLeftMessages.length); i++) {
+        try {
+          await this.lastSwapsLeftMessages[i].edit(chunks[i]);
+        } catch (error) {
+          console.error(`❌ Failed to update swapsleft message ${i + 1}: ${error.message}`);
+        }
+      }
+    }
+
+    await interaction.editReply(`✅ Marked all ${playersToMark.length} player(s) as done!`);
+  }
+
+  /**
+   * Handle "Mark Clan Done" button
+   */
+  async handleMarkClanDone(interaction, clanName) {
+    // Get all players from the specified clan who are not done yet
+    const playersToMark = [];
+    
+    if (this.distributionManager.groups[clanName]) {
+      this.distributionManager.groups[clanName].forEach(player => {
+        const identifier = this.distributionManager.getPlayerIdentifier(player);
+        
+        let isDone = this.distributionManager.completedPlayers.has(identifier);
+        if (!isDone && player.DiscordName) {
+          isDone = this.distributionManager.completedPlayers.has(player.DiscordName);
+        }
+        
+        if (!isDone) {
+          playersToMark.push(identifier);
+        }
+      });
+    }
+
+    if (playersToMark.length === 0) {
+      await interaction.editReply(`✅ All ${clanName} players are already marked as done!`);
+      return;
+    }
+
+    // Mark all clan players as done
+    playersToMark.forEach(identifier => {
+      this.distributionManager.completedPlayers.add(identifier);
+    });
+
+    // Update messages
+    const formattedText = this.distributionManager.getFormattedDistribution();
+    await this.updateDistributionMessages(formattedText);
+
+    // Update swapsleft messages
+    if (this.lastSwapsLeftMessages && this.lastSwapsLeftMessages.length > 0) {
+      const swapsLeftText = this.distributionManager.getSwapsLeft();
+      const maxLength = 2000;
+      const chunks = [];
+      
+      let currentChunk = '';
+      const lines = swapsLeftText.split('\n');
+      
+      for (const line of lines) {
+        if ((currentChunk + line + '\n').length > maxLength) {
+          if (currentChunk) chunks.push(currentChunk);
+          currentChunk = line + '\n';
+        } else {
+          currentChunk += line + '\n';
+        }
+      }
+      if (currentChunk) chunks.push(currentChunk);
+
+      for (let i = 0; i < Math.min(chunks.length, this.lastSwapsLeftMessages.length); i++) {
+        try {
+          await this.lastSwapsLeftMessages[i].edit(chunks[i]);
+        } catch (error) {
+          console.error(`❌ Failed to update swapsleft message ${i + 1}: ${error.message}`);
+        }
+      }
+    }
+
+    await interaction.editReply(`✅ Marked all ${playersToMark.length} ${clanName} player(s) as done!`);
   }
 
   /**
