@@ -324,8 +324,16 @@ export class DiscordBot {
           await this.handleSchedule(interaction);
           break;
 
-        case 'manageschedule':
-          await this.handleManageSchedule(interaction);
+        case 'viewschedule':
+          await this.handleViewSchedule(interaction);
+          break;
+
+        case 'editschedule':
+          await this.handleEditSchedule(interaction);
+          break;
+
+        case 'deleteschedule':
+          await this.handleDeleteSchedule(interaction);
           break;
 
         case 'help':
@@ -1040,36 +1048,7 @@ export class DiscordBot {
   }
 
   /**
-   * Handle /manageschedule command
-   */
-  async handleManageSchedule(interaction) {
-    const action = interaction.options.getString('action');
-    
-    try {
-      switch (action) {
-        case 'view':
-          await this.handleViewSchedule(interaction);
-          break;
-        
-        case 'edit':
-          await this.handleEditSchedule(interaction);
-          break;
-        
-        case 'delete':
-          await this.handleDeleteSchedule(interaction);
-          break;
-        
-        default:
-          await interaction.editReply('❌ Unknown action');
-      }
-    } catch (error) {
-      console.error(`❌ Error in handleManageSchedule: ${error.message}`);
-      await interaction.editReply(`❌ Error: ${error.message}`);
-    }
-  }
-
-  /**
-   * Handle view schedule action
+   * Handle /viewschedule command
    */
   async handleViewSchedule(interaction) {
     if (!this.scheduledData) {
@@ -1112,7 +1091,7 @@ export class DiscordBot {
   }
 
   /**
-   * Handle edit schedule action
+   * Handle /editschedule command
    */
   async handleEditSchedule(interaction) {
     if (!this.scheduledData) {
@@ -1215,7 +1194,7 @@ export class DiscordBot {
   }
 
   /**
-   * Handle delete schedule action
+   * Handle /deleteschedule command
    */
   async handleDeleteSchedule(interaction) {
     if (this.scheduledPost) {
@@ -1321,8 +1300,8 @@ export class DiscordBot {
           inline: false
         },
         {
-          name: '9️⃣ `/manageschedule action:view/edit/delete`',
-          value: '**Manage scheduled distribution**\n• `view` - Show current schedule\n• `edit` - Modify datetime or channel\n• `delete` - Cancel schedule\nExample: `/manageschedule action:view`',
+          name: '9️⃣ `/viewschedule` | `/editschedule` | `/deleteschedule`',
+          value: '**Manage scheduled distribution**\n• `/viewschedule` - Show current schedule\n• `/editschedule` - Modify datetime or channel\n• `/deleteschedule` - Cancel schedule',
           inline: false
         },
         {
