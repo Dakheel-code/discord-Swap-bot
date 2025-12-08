@@ -610,4 +610,106 @@ export class DistributionManager {
 
     return output;
   }
+
+  /**
+   * Get formatted list of players who haven't moved yet (no checkmark)
+   * @returns {string} Formatted text with players without checkmarks
+   */
+  getSwapsLeft() {
+    let output = '**SWAPS LEFT**\n\n';
+    
+    const playersNotMoved = [];
+
+    // Check all groups (RGR, OTL, RND)
+    ['RGR', 'OTL', 'RND'].forEach(groupName => {
+      this.groups[groupName].forEach(player => {
+        const name = player.DiscordName || this.getPlayerName(player);
+        const identifier = this.getPlayerIdentifier(player);
+        
+        // Check if marked as done
+        let isDone = this.completedPlayers.has(identifier);
+        
+        // Also check by DiscordName
+        if (!isDone && player.DiscordName) {
+          isDone = this.completedPlayers.has(player.DiscordName);
+        }
+        
+        // Also check by Discord-ID
+        if (!isDone && player['Discord-ID']) {
+          for (const completed of this.completedPlayers) {
+            if (completed.includes(player['Discord-ID'])) {
+              isDone = true;
+              break;
+            }
+          }
+        }
+        
+        // If not done, add to list
+        if (!isDone) {
+          playersNotMoved.push({
+            name: name,
+            targetClan: groupName
+          });
+        }
+      });
+    });
+
+    // Check WILDCARDS (manual moves)
+    if (this.groups.WILDCARDS && this.groups.WILDCARDS.length > 0) {
+      this.groups.WILDCARDS.forEach(player => {
+        const name = player.DiscordName || this.getPlayerName(player);
+        const identifier = this.getPlayerIdentifier(player);
+        
+        // Check if marked as done
+        let isDone = this.completedPlayers.has(identifier);
+        
+        if (!isDone && player.DiscordName) {
+          isDone = this.completedPlayers.has(player.DiscordName);
+        }
+        
+        if (!isDone && player['Discord-ID']) {
+          for (const completed of this.completedPlayers) {
+            if (completed.includes(player['Discord-ID'])) {
+              isDone = true;
+              break;
+            }
+          }
+        }
+        
+        // Get target clan from wildcard info
+        const info = this.wildcardInfo.get(identifier);
+        let targetClan = 'Unknown';
+        
+        if (info) {
+          if (info.type === 'manual') {
+            targetClan = info.target;
+          } else if (info.type === 'excluded') {
+            // Skip excluded players (Hold)
+            return;
+          }
+        }
+        
+        // If not done, add to list
+        if (!isDone) {
+          playersNotMoved.push({
+            name: name,
+            targetClan: targetClan
+          });
+        }
+      });
+    }
+
+    // Format output
+    if (playersNotMoved.length === 0) {
+      output += '✅ All players have moved!\n';
+    } else {
+      output += `Total players remaining: **${playersNotMoved.length}**\n\n`;
+      
+      playersNotMoved.forEach(player => {
+        output += `• ${player.name} - Please move to **${player.targetClan}**\n`;
+      });
+    }
+
+    return output;
+  }
 }

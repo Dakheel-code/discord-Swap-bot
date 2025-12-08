@@ -141,5 +141,6 @@ vite.config.ts.timestamp-*
 # Project specific
 credentials.json
 distribution_messages.json
+schedule.json
 .DS_Store
 .pm2/

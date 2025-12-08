@@ -123,4 +123,8 @@ export const commands = [
           { name: 'Remove ❌', value: 'remove' }
         )
     ),
+
+  new SlashCommandBuilder()
+    .setName('swapsleft')
+    .setDescription('Show players who have not moved yet'),
 ];

@@ -18,8 +18,11 @@ export class DiscordBot {
     this.playersData = [];
     this.isReady = false;
     this.scheduledPost = null; // Store scheduled timeout
+    this.scheduledData = null; // Store schedule data for persistence
     this.lastDistributionMessages = []; // Store last distribution messages for editing
+    this.lastSwapsLeftMessages = []; // Store last swapsleft messages for editing
     this.messagesFilePath = './distribution_messages.json'; // File to store message IDs
+    this.scheduleFilePath = './schedule.json'; // File to store schedule data
     this.lastChannelId = null; // Store channel ID for message retrieval
   }
 
@@ -51,6 +54,9 @@ export class DiscordBot {
     
     // Load saved message IDs
     await this.loadMessageIds();
+    
+    // Load saved schedule
+    await this.loadSchedule();
     
     this.isReady = true;
     console.log('🤖 Bot is ready to receive commands!');
@@ -102,6 +108,117 @@ export class DiscordBot {
       }
     } catch (error) {
       console.error('❌ Failed to load message IDs:', error);
+    }
+  }
+
+  /**
+   * Save schedule data to file
+   */
+  saveSchedule() {
+    try {
+      if (!this.scheduledData) {
+        console.warn('⚠️ No schedule data to save');
+        return;
+      }
+      fs.writeFileSync(this.scheduleFilePath, JSON.stringify(this.scheduledData, null, 2));
+      console.log('💾 Saved schedule to file');
+    } catch (error) {
+      console.error('❌ Failed to save schedule:', error);
+    }
+  }
+
+  /**
+   * Load schedule from file and restore setTimeout
+   */
+  async loadSchedule() {
+    try {
+      if (!fs.existsSync(this.scheduleFilePath)) {
+        console.log('ℹ️ No saved schedule found');
+        return;
+      }
+
+      const data = JSON.parse(fs.readFileSync(this.scheduleFilePath, 'utf8'));
+      this.scheduledData = data;
+
+      // Parse the scheduled date
+      const [datePart, timePart] = data.datetime.split(' ');
+      const [year, month, day] = datePart.split('-').map(Number);
+      const [hour, minute] = timePart.split(':').map(Number);
+      const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+      const now = new Date();
+
+      // Check if the scheduled time has passed
+      if (scheduledDate <= now) {
+        console.log('⚠️ Scheduled time has passed, removing schedule file');
+        fs.unlinkSync(this.scheduleFilePath);
+        this.scheduledData = null;
+        return;
+      }
+
+      const delay = scheduledDate.getTime() - now.getTime();
+      const minutesRemaining = Math.round(delay / 1000 / 60);
+
+      // Fetch the channel
+      const channel = await this.client.channels.fetch(data.channelId);
+      if (!channel) {
+        console.error('❌ Could not find scheduled channel');
+        fs.unlinkSync(this.scheduleFilePath);
+        this.scheduledData = null;
+        return;
+      }
+
+      // Restore the setTimeout
+      this.scheduledPost = setTimeout(async () => {
+        try {
+          console.log('🔄 Refreshing data from Google Sheets before scheduled post...');
+          this.playersData = await fetchPlayersDataWithDiscordNames();
+          
+          const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+          this.distributionManager.distribute(this.playersData, sortColumn);
+          console.log(`✅ Data refreshed: ${this.playersData.length} players`);
+          
+          const formattedText = this.distributionManager.getFormattedDistribution();
+          
+          if (formattedText && formattedText.length > 50) {
+            await this.sendLongMessage(channel, formattedText);
+            console.log(`✅ Scheduled post sent to ${channel.name}`);
+          } else {
+            console.error('❌ No distribution data to send');
+            await channel.send('❌ Error: No distribution data available. Please run /swap first.');
+          }
+
+          // Clean up after sending
+          fs.unlinkSync(this.scheduleFilePath);
+          this.scheduledData = null;
+          this.scheduledPost = null;
+        } catch (error) {
+          console.error('❌ Error sending scheduled post:', error);
+          await channel.send('❌ Error sending scheduled distribution. Please check bot logs.');
+        }
+      }, delay);
+
+      console.log(`✅ Restored schedule: Will post in ${minutesRemaining} minutes (${data.datetime} UTC)`);
+    } catch (error) {
+      console.error('❌ Failed to load schedule:', error);
+      // Clean up corrupted file
+      if (fs.existsSync(this.scheduleFilePath)) {
+        fs.unlinkSync(this.scheduleFilePath);
+      }
+    }
+  }
+
+  /**
+   * Delete schedule file
+   */
+  deleteSchedule() {
+    try {
+      if (fs.existsSync(this.scheduleFilePath)) {
+        fs.unlinkSync(this.scheduleFilePath);
+        console.log('🗑️ Deleted schedule file');
+      }
+      this.scheduledData = null;
+    } catch (error) {
+      console.error('❌ Failed to delete schedule:', error);
     }
   }
 
@@ -194,6 +311,10 @@ export class DiscordBot {
 
         case 'done':
           await this.handleDone(interaction);
+          break;
+
+        case 'swapsleft':
+          await this.handleSwapsLeft(interaction);
           break;
 
         default:
@@ -578,11 +699,20 @@ export class DiscordBot {
       }
 
       const delay = scheduledDate.getTime() - now.getTime();
+      const minutesUntil = Math.round(delay / 1000 / 60);
 
       // Cancel existing schedule
       if (this.scheduledPost) {
         clearTimeout(this.scheduledPost);
       }
+
+      // Save schedule data to file
+      this.scheduledData = {
+        datetime: datetime,
+        channelId: channel.id,
+        timestamp: Date.now()
+      };
+      this.saveSchedule();
 
       // Schedule the post
       this.scheduledPost = setTimeout(async () => {
@@ -606,19 +736,25 @@ export class DiscordBot {
             console.log(`✅ Scheduled post sent to ${channel.name}`);
           } else {
             console.error('❌ No distribution data to send');
-            await channel.send('❌ Error: No distribution data available. Please run /distribute first.');
+            await channel.send('❌ Error: No distribution data available. Please run /swap first.');
           }
+
+          // Clean up after sending
+          this.deleteSchedule();
+          this.scheduledPost = null;
         } catch (error) {
           console.error('❌ Error sending scheduled post:', error);
           await channel.send('❌ Error sending scheduled distribution. Please check bot logs.');
         }
       }, delay);
 
+      console.log(`⏰ Schedule set: Will post in ${minutesUntil} minutes (${datetime} UTC)`);
+
       // Send preview of the message that will be posted
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
         .setTitle('✅ Distribution Scheduled')
-        .setDescription(`The distribution will be posted in ${channel} at **${datetime} UTC**\n\n**Preview of the message:**`)
+        .setDescription(`The distribution will be posted in ${channel} at **${datetime} UTC**\n\n⏰ Time until post: **${minutesUntil} minutes**\n\n**Preview of the message:**`)
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
@@ -642,6 +778,9 @@ export class DiscordBot {
     if (this.scheduledPost) {
       clearTimeout(this.scheduledPost);
       this.scheduledPost = null;
+      
+      // Delete the schedule file
+      this.deleteSchedule();
 
       const embed = new EmbedBuilder()
         .setColor(0xff9900)
@@ -742,11 +881,21 @@ export class DiscordBot {
           name: '9️⃣ `/cancelschedule`',
           value: '**Cancel scheduled distribution**\nCancels any pending scheduled posts',
           inline: false
+        },
+        {
+          name: '🔟 `/done players:NAMES action:add/remove`',
+          value: '**Mark players as moved (adds/removes checkmark)**\nExample: `/done players:Ahmed action:add`\n*Use action:add to mark as done, action:remove to unmark*',
+          inline: false
+        },
+        {
+          name: '1️⃣1️⃣ `/swapsleft`',
+          value: '**Show players who haven\'t moved yet**\nDisplays a list of all players without checkmarks',
+          inline: false
         }
       )
       .addFields({
         name: '📋 Recommended Workflow',
-        value: '1. Use `/hold` to exclude players\n2. Use `/move` to manually assign players\n3. Run `/swap` to distribute remaining players',
+        value: '1. Use `/hold` to exclude players\n2. Use `/move` to manually assign players\n3. Run `/swap` to distribute remaining players\n4. Use `/done` to mark players as moved\n5. Use `/swapsleft` to see who\'s left',
         inline: false
       })
       .setFooter({ text: 'Discord Player Distribution Bot' })
@@ -972,6 +1121,40 @@ export class DiscordBot {
         }
       }
 
+      // Update swapsleft messages if they exist
+      if (this.lastSwapsLeftMessages && this.lastSwapsLeftMessages.length > 0) {
+        try {
+          const swapsLeftText = this.distributionManager.getSwapsLeft();
+          const maxLength = 2000;
+          const chunks = [];
+          
+          let currentChunk = '';
+          const lines = swapsLeftText.split('\n');
+          
+          for (const line of lines) {
+            if ((currentChunk + line + '\n').length > maxLength) {
+              if (currentChunk) chunks.push(currentChunk);
+              currentChunk = line + '\n';
+            } else {
+              currentChunk += line + '\n';
+            }
+          }
+          if (currentChunk) chunks.push(currentChunk);
+
+          // Update existing swapsleft messages
+          for (let i = 0; i < Math.min(chunks.length, this.lastSwapsLeftMessages.length); i++) {
+            try {
+              await this.lastSwapsLeftMessages[i].edit(chunks[i]);
+              console.log(`✅ Updated swapsleft message ${i + 1}`);
+            } catch (error) {
+              console.error(`❌ Failed to update swapsleft message ${i + 1}: ${error.message}`);
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Failed to update swapsleft messages: ${error.message}`);
+        }
+      }
+
       // Send response
       let description = '';
       if (successPlayers.length > 0) {
@@ -996,6 +1179,51 @@ export class DiscordBot {
         .setColor(0xff0000)
         .setTitle('❌ Failed')
         .setDescription(`Failed to update players.\n\n**Error:** ${error.message}`)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+    }
+  }
+
+  /**
+   * Handle /swapsleft command - Show players who haven't moved yet
+   */
+  async handleSwapsLeft(interaction) {
+    try {
+      // Check if distribution exists
+      if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
+        const embed = new EmbedBuilder()
+          .setColor(0xff9900)
+          .setTitle('⚠️ No Distribution')
+          .setDescription('Please run `/swap` first to create a distribution.')
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      // Get the swaps left text
+      const swapsLeftText = this.distributionManager.getSwapsLeft();
+
+      // Send the message
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff00)
+        .setTitle('📋 Swaps Left')
+        .setDescription('Players who have not moved yet:')
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+      
+      // Send the actual list and store messages
+      this.lastSwapsLeftMessages = await this.sendLongMessage(interaction.channel, swapsLeftText);
+      
+      console.log(`✅ Swaps left list sent (${this.lastSwapsLeftMessages.length} messages)`);
+    } catch (error) {
+      console.error(`❌ Error in handleSwapsLeft: ${error.message}`);
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('❌ Failed')
+        .setDescription(`Failed to get swaps left.\n\n**Error:** ${error.message}`)
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
