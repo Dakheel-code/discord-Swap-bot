@@ -622,6 +622,10 @@ export class DistributionManager {
 
     // Check all groups (RGR, OTL, RND)
     ['RGR', 'OTL', 'RND'].forEach(groupName => {
+      if (!this.groups[groupName] || !Array.isArray(this.groups[groupName])) {
+        return; // Skip if group doesn't exist or is not an array
+      }
+      
       this.groups[groupName].forEach(player => {
         const name = player.DiscordName || this.getPlayerName(player);
         const identifier = this.getPlayerIdentifier(player);

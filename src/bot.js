@@ -1068,7 +1068,7 @@ export class DiscordBot {
               // Calculate similarity between username and first word only
               const similarity = this.calculateSimilarity(usernameLower, firstWord);
               
-              if (similarity >= 0.95) {
+              if (similarity >= 0.80) {
                 console.log(`✅ Found similar name: "${fullName}" (similarity: ${(similarity * 100).toFixed(1)}%)`);
                 matchedName = nameMatch[0].trim(); // Keep the full match (• name or - name)
                 found = true;
