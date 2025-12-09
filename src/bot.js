@@ -482,7 +482,7 @@ export class DiscordBot {
     try {
       await interaction.deferReply({ ephemeral: true });
       
-      if (customId === 'select_players_done') {
+      if (customId === 'select_players_done' || customId === 'select_rgr_done' || customId === 'select_otl_done' || customId === 'select_rnd_done') {
         await this.handleSelectPlayersDone(interaction);
       } else {
         await interaction.editReply('❌ Unknown select menu');
@@ -539,8 +539,12 @@ export class DiscordBot {
       return;
     }
 
-    // Get all players who are not done yet
-    const playersNotDone = [];
+    // Get players not done, grouped by clan
+    const playersByClans = {
+      RGR: [],
+      OTL: [],
+      RND: []
+    };
     
     ['RGR', 'OTL', 'RND'].forEach(groupName => {
       if (this.distributionManager.groups[groupName]) {
@@ -554,9 +558,8 @@ export class DiscordBot {
           }
           
           if (!isDone) {
-            playersNotDone.push({
+            playersByClans[groupName].push({
               name: name,
-              clan: groupName,
               identifier: identifier
             });
           }
@@ -564,26 +567,17 @@ export class DiscordBot {
       }
     });
 
-    if (playersNotDone.length === 0) {
+    const totalNotDone = playersByClans.RGR.length + playersByClans.OTL.length + playersByClans.RND.length;
+
+    if (totalNotDone === 0) {
       await interaction.editReply('✅ All players have moved!');
       return;
     }
 
-    // Create select menu (max 25 options)
-    const options = playersNotDone.slice(0, 25).map(player => ({
-      label: `${player.name} → ${player.clan}`,
-      value: player.identifier,
-      emoji: '👤'
-    }));
+    // Create 3 separate select menus (one for each clan)
+    const components = [];
 
-    const selectMenu = new StringSelectMenuBuilder()
-      .setCustomId('select_players_done')
-      .setPlaceholder('Select players to mark as done')
-      .setMinValues(1)
-      .setMaxValues(Math.min(options.length, 25))
-      .addOptions(options);
-
-    // Create buttons for marking all or by clan
+    // Create buttons row first
     const buttonsRow = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
@@ -610,12 +604,66 @@ export class DiscordBot {
           .setEmoji('🏆')
           .setStyle(ButtonStyle.Primary)
       );
+    
+    components.push(buttonsRow);
 
-    const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+    // RGR Select Menu
+    if (playersByClans.RGR.length > 0) {
+      const rgrOptions = playersByClans.RGR.slice(0, 25).map(player => ({
+        label: player.name,
+        value: player.identifier,
+        emoji: '🏆'
+      }));
+
+      const rgrSelectMenu = new StringSelectMenuBuilder()
+        .setCustomId('select_rgr_done')
+        .setPlaceholder(`RGR (${playersByClans.RGR.length} remaining)`)
+        .setMinValues(1)
+        .setMaxValues(Math.min(rgrOptions.length, 25))
+        .addOptions(rgrOptions);
+
+      components.push(new ActionRowBuilder().addComponents(rgrSelectMenu));
+    }
+
+    // OTL Select Menu
+    if (playersByClans.OTL.length > 0) {
+      const otlOptions = playersByClans.OTL.slice(0, 25).map(player => ({
+        label: player.name,
+        value: player.identifier,
+        emoji: '🏆'
+      }));
+
+      const otlSelectMenu = new StringSelectMenuBuilder()
+        .setCustomId('select_otl_done')
+        .setPlaceholder(`OTL (${playersByClans.OTL.length} remaining)`)
+        .setMinValues(1)
+        .setMaxValues(Math.min(otlOptions.length, 25))
+        .addOptions(otlOptions);
+
+      components.push(new ActionRowBuilder().addComponents(otlSelectMenu));
+    }
+
+    // RND Select Menu
+    if (playersByClans.RND.length > 0) {
+      const rndOptions = playersByClans.RND.slice(0, 25).map(player => ({
+        label: player.name,
+        value: player.identifier,
+        emoji: '🏆'
+      }));
+
+      const rndSelectMenu = new StringSelectMenuBuilder()
+        .setCustomId('select_rnd_done')
+        .setPlaceholder(`RND (${playersByClans.RND.length} remaining)`)
+        .setMinValues(1)
+        .setMaxValues(Math.min(rndOptions.length, 25))
+        .addOptions(rndOptions);
+
+      components.push(new ActionRowBuilder().addComponents(rndSelectMenu));
+    }
 
     await interaction.editReply({
-      content: `Select players to mark as done (${playersNotDone.length} remaining):`,
-      components: [buttonsRow, selectRow]
+      content: `Select players to mark as done (${totalNotDone} remaining):`,
+      components: components
     });
   }
 
