@@ -678,17 +678,40 @@ export class DiscordBot {
   async handleSelectPlayersDone(interaction) {
     const selectedIdentifiers = interaction.values;
     
+    console.log(`🔍 Selected identifiers: ${selectedIdentifiers.join(', ')}`);
+    console.log(`📋 Current completed players: ${Array.from(this.distributionManager.completedPlayers).join(', ')}`);
+    
     // Toggle players: if already marked as done, unmark them; otherwise mark them
     let markedCount = 0;
     let unmarkedCount = 0;
     
     selectedIdentifiers.forEach(identifier => {
-      if (this.distributionManager.completedPlayers.has(identifier)) {
+      // Also check by DiscordName mention
+      let isMarked = this.distributionManager.completedPlayers.has(identifier);
+      
+      // Try to find player and check by Discord-ID too
+      if (!isMarked) {
+        const player = this.distributionManager.findPlayer(identifier);
+        if (player && player.DiscordName) {
+          isMarked = this.distributionManager.completedPlayers.has(player.DiscordName);
+        }
+      }
+      
+      if (isMarked) {
         // Player is already marked - unmark them
+        console.log(`❌ Unmarking: ${identifier}`);
         this.distributionManager.completedPlayers.delete(identifier);
+        
+        // Also try to remove by DiscordName
+        const player = this.distributionManager.findPlayer(identifier);
+        if (player && player.DiscordName) {
+          this.distributionManager.completedPlayers.delete(player.DiscordName);
+        }
+        
         unmarkedCount++;
       } else {
         // Player is not marked - mark them
+        console.log(`✅ Marking: ${identifier}`);
         this.distributionManager.completedPlayers.add(identifier);
         markedCount++;
       }
