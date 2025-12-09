@@ -236,12 +236,12 @@ export async function fetchPlayersDataWithDiscordNames() {
           discordId = null; // No Discord ID available
         }
         
-        player.DiscordName = discordName;
+        player.DiscordName = discordName; // This will be the mention for messages
         player['Discord-ID'] = discordId; // Add Discord ID as a separate field
         player.Action = action; // Add Action from DiscordMap
         player.OriginalName = player.Name || player.Player || player.USERNAME;
-        // Update the display name
-        player.DisplayName = discordName;
+        // Keep DisplayName as original name (not mention) for dropdowns/lists
+        player.DisplayName = player.OriginalName;
         
         // Debug: Log first 3 players
         if (index < 3) {
