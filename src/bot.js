@@ -1870,16 +1870,25 @@ export class DiscordBot {
    */
   async handleSwapsLeft(interaction) {
     try {
-      // Check if distribution exists
+      // Check if distribution exists, if not try to load from saved messages
       if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
-        const embed = new EmbedBuilder()
-          .setColor(0xff9900)
-          .setTitle('⚠️ No Distribution')
-          .setDescription('Please run `/swap` first to create a distribution.')
-          .setTimestamp();
+        // Try to refresh data and re-distribute
+        if (this.lastDistributionMessages && this.lastDistributionMessages.length > 0) {
+          console.log('🔄 No distribution in memory, refreshing from Google Sheets...');
+          this.playersData = await fetchPlayersDataWithDiscordNames();
+          const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+          this.distributionManager.distribute(this.playersData, sortColumn);
+          console.log(`✅ Distribution refreshed: ${this.playersData.length} players`);
+        } else {
+          const embed = new EmbedBuilder()
+            .setColor(0xff9900)
+            .setTitle('⚠️ No Distribution')
+            .setDescription('Please run `/swap` first to create a distribution.')
+            .setTimestamp();
 
-        await interaction.editReply({ embeds: [embed] });
-        return;
+          await interaction.editReply({ embeds: [embed] });
+          return;
+        }
       }
 
       // Get the swaps left text
