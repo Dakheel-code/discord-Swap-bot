@@ -1028,6 +1028,15 @@ export class DiscordBot {
       // Write directly to Google Sheet Action column
       await writePlayerAction(discordId, targetGroup);
       
+      // Refresh distribution and update messages
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+      this.distributionManager.distribute(this.playersData, sortColumn);
+      
+      // Update distribution messages
+      const formattedText = this.distributionManager.getFormattedDistribution();
+      await this.updateDistributionMessages(formattedText);
+      
       // Success message
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
@@ -1075,6 +1084,15 @@ export class DiscordBot {
       
       // Write "Hold" directly to Google Sheet Action column
       await writePlayerAction(discordId, 'Hold');
+      
+      // Refresh distribution and update messages
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+      this.distributionManager.distribute(this.playersData, sortColumn);
+      
+      // Update distribution messages
+      const formattedText = this.distributionManager.getFormattedDistribution();
+      await this.updateDistributionMessages(formattedText);
       
       // Success message
       const embed = new EmbedBuilder()
@@ -1131,6 +1149,15 @@ export class DiscordBot {
         description += `\n\n_Cleared previous action: "${result.previousValue}"_`;
       }
 
+      // Refresh distribution and update messages
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+      this.distributionManager.distribute(this.playersData, sortColumn);
+      
+      // Update distribution messages
+      const formattedText = this.distributionManager.getFormattedDistribution();
+      await this.updateDistributionMessages(formattedText);
+      
       // Success message
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
