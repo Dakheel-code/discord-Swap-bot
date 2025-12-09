@@ -627,13 +627,15 @@ export class DistributionManager {
       }
       
       this.groups[groupName].forEach(player => {
-        const name = player.DiscordName || this.getPlayerName(player);
+        // Use original name for display, not Discord mention
+        const displayName = this.getPlayerName(player);
+        const mention = player.DiscordName; // Keep mention for reference
         const identifier = this.getPlayerIdentifier(player);
         
         // Check if marked as done
         let isDone = this.completedPlayers.has(identifier);
         
-        // Also check by DiscordName
+        // Also check by DiscordName (mention)
         if (!isDone && player.DiscordName) {
           isDone = this.completedPlayers.has(player.DiscordName);
         }
@@ -648,10 +650,11 @@ export class DistributionManager {
           }
         }
         
-        // If not done, add to list
+        // If not done, add to list with display name and mention
         if (!isDone) {
           playersNotMoved.push({
-            name: name,
+            name: displayName,
+            mention: mention,
             targetClan: groupName
           });
         }
@@ -661,7 +664,9 @@ export class DistributionManager {
     // Check WILDCARDS (manual moves)
     if (this.groups.WILDCARDS && this.groups.WILDCARDS.length > 0) {
       this.groups.WILDCARDS.forEach(player => {
-        const name = player.DiscordName || this.getPlayerName(player);
+        // Use original name for display, not Discord mention
+        const displayName = this.getPlayerName(player);
+        const mention = player.DiscordName; // Keep mention for reference
         const identifier = this.getPlayerIdentifier(player);
         
         // Check if marked as done
@@ -693,10 +698,11 @@ export class DistributionManager {
           }
         }
         
-        // If not done, add to list
+        // If not done, add to list with display name and mention
         if (!isDone) {
           playersNotMoved.push({
-            name: name,
+            name: displayName,
+            mention: mention,
             targetClan: targetClan
           });
         }
