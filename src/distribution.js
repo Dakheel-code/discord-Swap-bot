@@ -605,9 +605,8 @@ export class DistributionManager {
 
     // Footer message
     output += '---\n\n';
-    output += 'Stop: ❌ Hold: ✋ Done: ✅\n\n';
+    output += 'Done: ✅\n\n';
     output += '**IF SOMEONE IN __RGR OR OTL__ CAN\'T PLAY AT RESET, PLEASE CONTACT LEADERSHIP!**\n\n';
-    output += 'AND DON\'T FORGET TO HIT MANTICORE BEFORE YOU MOVE!\n\n';
     output += ':exclamation: **| 18-HOUR-RULE |** :exclamation:\n';
     output += '__Anyone on the swap list who hasn\'t moved within 18 hours after reset will be automatically kicked from their current clan, replaced and must apply on their own to RND.__\n';
 
