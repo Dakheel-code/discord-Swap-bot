@@ -1001,8 +1001,15 @@ export class DiscordBot {
         ephemeral: true
       });
     } else {
-      // Create new messages with interactive buttons
-      await this.sendLongMessage(interaction.channel, formattedText, true, true);
+      // Create new messages without buttons
+      await this.sendLongMessage(interaction.channel, formattedText, true, false);
+      
+      // Send admin controls as ephemeral followUp
+      await interaction.followUp({
+        content: '**Admin Controls** (Only you can see this)',
+        components: [this.createDistributionButtons()],
+        ephemeral: true
+      });
     }
   }
 
@@ -2142,24 +2149,8 @@ export class DiscordBot {
       }
     }
 
-    // Send buttons in a separate ephemeral message (admin only)
-    if (addButtons) {
-      try {
-        // Send buttons as a separate message with ephemeral option
-        await channel.send({
-          content: '**Admin Controls** (Only you can see this)',
-          components: [this.createDistributionButtons()],
-          flags: 64 // MessageFlags.Ephemeral
-        });
-      } catch (error) {
-        // If ephemeral doesn't work in regular channel, send normally
-        console.log('⚠️ Could not send ephemeral message, sending normally');
-        await channel.send({
-          content: '**Admin Controls**',
-          components: [this.createDistributionButtons()]
-        });
-      }
-    }
+    // Note: Buttons are now sent as ephemeral followUp in handleDistribute
+    // No need to send them here anymore
 
     // Save message IDs to file
     if (saveMessages) {
