@@ -678,9 +678,20 @@ export class DiscordBot {
   async handleSelectPlayersDone(interaction) {
     const selectedIdentifiers = interaction.values;
     
-    // Mark selected players as done
+    // Toggle players: if already marked as done, unmark them; otherwise mark them
+    let markedCount = 0;
+    let unmarkedCount = 0;
+    
     selectedIdentifiers.forEach(identifier => {
-      this.distributionManager.completedPlayers.add(identifier);
+      if (this.distributionManager.completedPlayers.has(identifier)) {
+        // Player is already marked - unmark them
+        this.distributionManager.completedPlayers.delete(identifier);
+        unmarkedCount++;
+      } else {
+        // Player is not marked - mark them
+        this.distributionManager.completedPlayers.add(identifier);
+        markedCount++;
+      }
     });
 
     // Update distribution messages
@@ -715,7 +726,20 @@ export class DiscordBot {
       }
     }
 
-    await interaction.editReply(`✅ Marked ${selectedIdentifiers.length} player(s) as done!`);
+    // Build response message
+    let responseMsg = '';
+    if (markedCount > 0) {
+      responseMsg += `✅ Marked ${markedCount} player(s) as done`;
+    }
+    if (unmarkedCount > 0) {
+      if (responseMsg) responseMsg += '\n';
+      responseMsg += `❌ Unmarked ${unmarkedCount} player(s)`;
+    }
+    if (!responseMsg) {
+      responseMsg = '⚠️ No changes made';
+    }
+
+    await interaction.editReply(responseMsg);
   }
 
   /**
