@@ -576,6 +576,10 @@ export class DiscordBot {
     const totalNotDone = playersByClans.RGR.length + playersByClans.OTL.length + playersByClans.RND.length + playersByClans.WILDCARDS.length;
 
     if (totalNotDone === 0) {
+      // Send public completion message
+      await interaction.channel.send('**SWAPS COMPLETED**');
+      
+      // Send ephemeral confirmation
       await interaction.editReply('✅ All players have moved!');
       return;
     }
@@ -684,8 +688,15 @@ export class DiscordBot {
       components.push(new ActionRowBuilder().addComponents(wildcardsSelectMenu));
     }
 
+    // Add instructions
+    const instructions = `Select players to mark as done (${totalNotDone} remaining):\n\n` +
+      `**How to use:**\n` +
+      `• Select a player → Adds ✅ mark\n` +
+      `• Select same player again → Removes ✅ mark\n` +
+      `• Use buttons above for quick actions`;
+    
     await interaction.editReply({
-      content: `Select players to mark as done (${totalNotDone} remaining):`,
+      content: instructions,
       components: components
     });
   }
@@ -855,6 +866,9 @@ export class DiscordBot {
       }
     }
 
+    // Send public completion message
+    await interaction.channel.send('**SWAPS COMPLETED**');
+    
     await interaction.editReply(`✅ Marked all ${playersToMark.length} player(s) as done!`);
   }
 
