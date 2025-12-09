@@ -699,6 +699,12 @@ export class DiscordBot {
     console.log(`🔍 Selected identifiers: ${selectedIdentifiers.join(', ')}`);
     console.log(`📋 Current completed players: ${Array.from(this.distributionManager.completedPlayers).join(', ')}`);
     
+    // Check if any players were selected
+    if (!selectedIdentifiers || selectedIdentifiers.length === 0) {
+      await interaction.editReply('⚠️ No players selected');
+      return;
+    }
+    
     // Toggle players: if already marked as done, unmark them; otherwise mark them
     let markedCount = 0;
     let unmarkedCount = 0;
