@@ -69,8 +69,8 @@ export const commands = [
         .setDescription('What to reset')
         .setRequired(true)
         .addChoices(
-          { name: 'Reset All Settings (Actions + Distribution)', value: 'all' },
-          { name: 'Reset Distribution Only', value: 'swap' }
+          { name: 'Reset All Settings (Actions + Swap)', value: 'all' },
+          { name: 'Reset Swap Only', value: 'swap' }
         )
     ),
 

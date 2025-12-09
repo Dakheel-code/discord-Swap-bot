@@ -1304,7 +1304,7 @@ export class DiscordBot {
         title = '✅ Reset All Complete';
         description = `**All settings have been reset:**\n\n`;
         description += `✅ Cleared ${result.clearedCount} actions from DiscordMap (Column C)\n`;
-        description += `✅ Reset distribution manager\n`;
+        description += `✅ Reset swap manager\n`;
         description += `✅ Cleared saved messages\n`;
         description += `✅ Refreshed player data (${this.playersData.length} players)\n\n`;
         description += `_All /move, /hold actions have been cleared_\n`;
@@ -1338,9 +1338,9 @@ export class DiscordBot {
           console.log('🗑️ Deleted saved message IDs');
         }
 
-        title = '✅ Reset Distribution Complete';
-        description = `**Distribution has been reset:**\n\n`;
-        description += `✅ Reset distribution manager\n`;
+        title = '✅ Reset Swap Complete';
+        description = `**Swap has been reset:**\n\n`;
+        description += `✅ Reset swap manager\n`;
         description += `✅ Cleared saved messages\n`;
         description += `✅ Refreshed player data (${this.playersData.length} players)\n\n`;
         description += `⚠️ All /move, /hold actions are still active\n`;
