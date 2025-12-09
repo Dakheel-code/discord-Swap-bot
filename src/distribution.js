@@ -559,9 +559,9 @@ export class DistributionManager {
 
       output += `## WILDCARDS (${this.groups.WILDCARDS.length})\n`;
       this.groups.WILDCARDS.forEach((player, index) => {
-        // Use original name with trophy emoji, not Discord mention
+        // Use original name without adding emoji (name already has it from sheets)
         const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || this.getPlayerName(player);
-        const name = `🏆 ${originalName}`;
+        const name = originalName;
         const identifier = this.getPlayerIdentifier(player);
         
         // Check if marked as done by identifier OR by DiscordName mention OR by Discord-ID
