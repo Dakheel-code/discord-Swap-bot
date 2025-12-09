@@ -671,8 +671,7 @@ export class DiscordBot {
     if (playersByClans.WILDCARDS.length > 0) {
       const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => ({
         label: player.name,
-        value: player.identifier,
-        emoji: '🃏'
+        value: player.identifier
       }));
 
       const wildcardsSelectMenu = new StringSelectMenuBuilder()
