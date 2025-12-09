@@ -477,7 +477,7 @@ export class DistributionManager {
         RND: this.groups.RND.length,
       },
       total: this.groups.RGR.length + this.groups.OTL.length + this.groups.RND.length,
-      excluded: this.excludedPlayers.size,
+      excluded: this.groups.WILDCARDS ? this.groups.WILDCARDS.length : 0,
       sortColumn: this.sortColumn,
     };
   }
