@@ -194,8 +194,10 @@ export async function fetchPlayersDataWithDiscordNames() {
     let playersWithDiscordId = 0;
     let playersWithMention = 0;
     players.forEach((player, index) => {
-      // Get player's ingame name from column C (Name, Player, USERNAME, etc.)
-      const ingameId = player['Name'] || player['Player'] || player['USERNAME'] || player['Player_ID'] || player['PlayerID'] || player['ID'] || player['player_id'];
+      // Get player's Ingame-ID - try different possible column names
+      const ingameId = player['Ingame-ID'] || player['IngameID'] || player['Ingame_ID'] || player['INGAME-ID'] || 
+                       player['Player_ID'] || player['PlayerID'] || player['ID'] || player['player_id'] ||
+                       player['Name'] || player['Player'] || player['USERNAME'];
       
       if (ingameId && discordMapping.has(String(ingameId).trim())) {
         const mappingData = discordMapping.get(String(ingameId).trim());
