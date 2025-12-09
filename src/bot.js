@@ -553,7 +553,8 @@ export class DiscordBot {
     ['RGR', 'OTL', 'RND'].forEach(groupName => {
       if (this.distributionManager.groups[groupName]) {
         this.distributionManager.groups[groupName].forEach(player => {
-          const name = player.DiscordName || this.distributionManager.getPlayerName(player);
+          // Use original name for display, not Discord mention
+          const displayName = this.distributionManager.getPlayerName(player);
           const identifier = this.distributionManager.getPlayerIdentifier(player);
           
           let isDone = this.distributionManager.completedPlayers.has(identifier);
@@ -563,7 +564,7 @@ export class DiscordBot {
           
           if (!isDone) {
             playersByClans[groupName].push({
-              name: name,
+              name: displayName,
               identifier: identifier
             });
           }
