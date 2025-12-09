@@ -2131,18 +2131,33 @@ export class DiscordBot {
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
-      const isLastChunk = i === chunks.length - 1;
       
-      // Add buttons to the last chunk if requested
+      // Don't add buttons to message chunks anymore
       const messageOptions = { content: chunk };
-      if (addButtons && isLastChunk) {
-        messageOptions.components = [this.createDistributionButtons()];
-      }
       
       const message = await channel.send(messageOptions);
       sentMessages.push(message);
       if (saveMessages) {
         this.lastDistributionMessages.push(message);
+      }
+    }
+
+    // Send buttons in a separate ephemeral message (admin only)
+    if (addButtons) {
+      try {
+        // Send buttons as a separate message with ephemeral option
+        await channel.send({
+          content: '**Admin Controls** (Only you can see this)',
+          components: [this.createDistributionButtons()],
+          flags: 64 // MessageFlags.Ephemeral
+        });
+      } catch (error) {
+        // If ephemeral doesn't work in regular channel, send normally
+        console.log('⚠️ Could not send ephemeral message, sending normally');
+        await channel.send({
+          content: '**Admin Controls**',
+          components: [this.createDistributionButtons()]
+        });
       }
     }
 
