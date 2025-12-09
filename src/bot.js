@@ -1426,11 +1426,38 @@ export class DiscordBot {
 
       await interaction.editReply({ embeds: [embed] });
 
-      // Send the actual distribution preview
+      // Send the actual distribution preview as ephemeral
       const formattedText = this.distributionManager.getFormattedDistribution();
       if (formattedText && formattedText.length > 50) {
-        await interaction.followUp({ content: '**Preview of the scheduled message:**', ephemeral: true });
-        await this.sendLongMessage(interaction.channel, formattedText);
+        // Split into chunks for ephemeral messages (max 2000 chars)
+        const maxLength = 2000;
+        const chunks = [];
+        let currentChunk = '';
+        const lines = formattedText.split('\n');
+        
+        for (const line of lines) {
+          if ((currentChunk + line + '\n').length > maxLength) {
+            if (currentChunk) chunks.push(currentChunk);
+            currentChunk = line + '\n';
+          } else {
+            currentChunk += line + '\n';
+          }
+        }
+        if (currentChunk) chunks.push(currentChunk);
+        
+        // Send first chunk with header
+        await interaction.followUp({ 
+          content: '**Preview of the scheduled message:**\n\n' + chunks[0], 
+          ephemeral: true 
+        });
+        
+        // Send remaining chunks
+        for (let i = 1; i < chunks.length; i++) {
+          await interaction.followUp({ 
+            content: chunks[i], 
+            ephemeral: true 
+          });
+        }
       } else {
         await interaction.followUp({ content: '⚠️ No distribution data available yet. Please run /swap first.', ephemeral: true });
       }
