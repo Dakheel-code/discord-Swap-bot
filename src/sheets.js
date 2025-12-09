@@ -133,7 +133,7 @@ export async function fetchPlayersData() {
 
 /**
  * Fetch Discord name mapping from DiscordMap sheet
- * @returns {Promise<Map<string, object>>} Map of Player_ID -> {discordName, action}
+ * @returns {Promise<Map<string, object>>} Map of Player_ID -> {discordName, action, discordId}
  */
 export async function fetchDiscordMapping() {
   if (!sheetsClient) {
@@ -143,7 +143,7 @@ export async function fetchDiscordMapping() {
   try {
     const response = await sheetsClient.spreadsheets.values.get({
       spreadsheetId: config.googleSheets.sheetId,
-      range: 'DiscordMap!A:C',
+      range: 'DiscordMap!A:D', // Read up to column D for Discord-ID
     });
 
     const rows = response.data.values;
@@ -154,14 +154,15 @@ export async function fetchDiscordMapping() {
       return mapping;
     }
 
-    // Skip header row, map Player_ID (column A) to {discordName (column B), action (column C)}
+    // Skip header row, map Player_ID (column A) to {discordName (column B), action (column C), discordId (column D)}
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
-      if (row[0] && row[1]) {
+      if (row[0]) { // At least Player_ID must exist
         const playerId = String(row[0]).trim();
-        const discordName = String(row[1]).trim();
+        const discordName = row[1] ? String(row[1]).trim() : '';
         const action = row[2] ? String(row[2]).trim() : '';
-        mapping.set(playerId, { discordName, action });
+        const discordId = row[3] ? String(row[3]).trim() : ''; // Discord-ID from column D
+        mapping.set(playerId, { discordName, action, discordId });
       }
     }
 
@@ -191,6 +192,7 @@ export async function fetchPlayersDataWithDiscordNames() {
 
     // Replace names with Discord names based on Player_ID
     let playersWithDiscordId = 0;
+    let playersWithMention = 0;
     players.forEach((player, index) => {
       // Try to find Player_ID in different possible column names
       const playerId = player['Player_ID'] || player['PlayerID'] || player['ID'] || player['player_id'];
@@ -198,29 +200,38 @@ export async function fetchPlayersDataWithDiscordNames() {
       if (playerId && discordMapping.has(String(playerId).trim())) {
         const mappingData = discordMapping.get(String(playerId).trim());
         let discordName = mappingData.discordName;
-        let discordId = null;
+        let discordId = mappingData.discordId; // Get Discord-ID from column D
         const action = mappingData.action;
         
-        // Check if it's a Discord User ID (numeric) or username
-        if (discordName) {
-          // If it's all digits, it's a Discord User ID - format as mention
-          if (/^\d+$/.test(discordName.trim())) {
-            discordId = discordName.trim(); // Store the raw Discord ID
-            discordName = `<@${discordName.trim()}>`;
+        // Priority 1: Use Discord-ID from column D if available
+        if (discordId && /^\d+$/.test(discordId.trim())) {
+          // We have a valid Discord ID - create mention
+          discordId = discordId.trim();
+          discordName = `<@${discordId}>`;
+          playersWithDiscordId++;
+          playersWithMention++;
+        }
+        // Priority 2: Check if discordName (column B) is a Discord ID
+        else if (discordName && /^\d+$/.test(discordName.trim())) {
+          // Column B contains Discord ID
+          discordId = discordName.trim();
+          discordName = `<@${discordId}>`;
+          playersWithDiscordId++;
+          playersWithMention++;
+        }
+        // Priority 3: Check if discordName already has <@...> format
+        else if (discordName && discordName.startsWith('<@') && discordName.endsWith('>')) {
+          const match = discordName.match(/<@!?(\d+)>/);
+          if (match) {
+            discordId = match[1];
             playersWithDiscordId++;
-          } 
-          // If it already has <@...> format, extract the ID
-          else if (discordName.startsWith('<@') && discordName.endsWith('>')) {
-            const match = discordName.match(/<@!?(\d+)>/);
-            if (match) {
-              discordId = match[1]; // Extract Discord ID from mention
-              playersWithDiscordId++;
-            }
+            playersWithMention++;
           }
-          // Otherwise, it's a username - add @ prefix
-          else if (!discordName.startsWith('@')) {
-            discordName = '@' + discordName;
-          }
+        }
+        // Priority 4: It's a username - add @ prefix (no mention)
+        else if (discordName && !discordName.startsWith('@')) {
+          discordName = '@' + discordName;
+          discordId = null; // No Discord ID available
         }
         
         player.DiscordName = discordName;
@@ -230,9 +241,9 @@ export async function fetchPlayersDataWithDiscordNames() {
         // Update the display name
         player.DisplayName = discordName;
         
-        // Debug: Log first 3 players with Discord ID
-        if (index < 3 && discordId) {
-          console.log(`📋 Player ${index + 1}: PlayerId="${playerId}", DiscordName="${discordName}", Discord-ID="${discordId}", Action="${action}"`);
+        // Debug: Log first 3 players
+        if (index < 3) {
+          console.log(`📋 Player ${index + 1}: PlayerId="${playerId}", DiscordName="${discordName}", Discord-ID="${discordId || 'N/A'}", Action="${action}"`);
         }
       } else {
         // Keep original name if no mapping found
@@ -240,7 +251,7 @@ export async function fetchPlayersDataWithDiscordNames() {
       }
     });
 
-    console.log(`✅ Processed ${players.length} players with Discord names (${playersWithDiscordId} with Discord IDs)`);
+    console.log(`✅ Processed ${players.length} players with Discord names (${playersWithMention} with mentions, ${playersWithDiscordId} with Discord IDs)`);
     return players;
   } catch (error) {
     console.error('❌ Error fetching players with Discord names:', error.message);

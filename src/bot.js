@@ -19,6 +19,7 @@ export class DiscordBot {
     this.isReady = false;
     this.scheduledPost = null; // Store scheduled timeout
     this.scheduledData = null; // Store schedule data for persistence
+    this.scheduleCheckInterval = null; // Store interval for checking schedule
     this.lastDistributionMessages = []; // Store last distribution messages for editing
     this.lastSwapsLeftMessages = []; // Store last swapsleft messages for editing
     this.messagesFilePath = './distribution_messages.json'; // File to store message IDs
@@ -57,6 +58,9 @@ export class DiscordBot {
     
     // Load saved schedule
     await this.loadSchedule();
+    
+    // Start schedule checker (runs every minute)
+    this.startScheduleChecker();
     
     this.isReady = true;
     console.log('🤖 Bot is ready to receive commands!');
@@ -145,7 +149,7 @@ export class DiscordBot {
   }
 
   /**
-   * Load schedule from file and restore setTimeout
+   * Load schedule from file
    */
   async loadSchedule() {
     try {
@@ -164,57 +168,15 @@ export class DiscordBot {
       const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
       const now = new Date();
 
-      // Check if the scheduled time has passed
-      if (scheduledDate <= now) {
-        console.log('⚠️ Scheduled time has passed, removing schedule file');
-        fs.unlinkSync(this.scheduleFilePath);
-        this.scheduledData = null;
-        return;
-      }
-
       const delay = scheduledDate.getTime() - now.getTime();
       const minutesRemaining = Math.round(delay / 1000 / 60);
 
-      // Fetch the channel
-      const channel = await this.client.channels.fetch(data.channelId);
-      if (!channel) {
-        console.error('❌ Could not find scheduled channel');
-        fs.unlinkSync(this.scheduleFilePath);
-        this.scheduledData = null;
-        return;
+      if (delay > 0) {
+        console.log(`✅ Loaded schedule: Will post in ${minutesRemaining} minutes (${data.datetime} UTC)`);
+        console.log(`📅 Scheduled for: ${scheduledDate.toISOString()}`);
+      } else {
+        console.log(`⚠️ Loaded schedule is ${Math.abs(minutesRemaining)} minutes late - will be handled by checker`);
       }
-
-      // Restore the setTimeout
-      this.scheduledPost = setTimeout(async () => {
-        try {
-          console.log('🔄 Refreshing data from Google Sheets before scheduled post...');
-          this.playersData = await fetchPlayersDataWithDiscordNames();
-          
-          const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-          this.distributionManager.distribute(this.playersData, sortColumn);
-          console.log(`✅ Data refreshed: ${this.playersData.length} players`);
-          
-          const formattedText = this.distributionManager.getFormattedDistribution();
-          
-          if (formattedText && formattedText.length > 50) {
-            await this.sendLongMessage(channel, formattedText);
-            console.log(`✅ Scheduled post sent to ${channel.name}`);
-          } else {
-            console.error('❌ No distribution data to send');
-            await channel.send('❌ Error: No distribution data available. Please run /swap first.');
-          }
-
-          // Clean up after sending
-          fs.unlinkSync(this.scheduleFilePath);
-          this.scheduledData = null;
-          this.scheduledPost = null;
-        } catch (error) {
-          console.error('❌ Error sending scheduled post:', error);
-          await channel.send('❌ Error sending scheduled distribution. Please check bot logs.');
-        }
-      }, delay);
-
-      console.log(`✅ Restored schedule: Will post in ${minutesRemaining} minutes (${data.datetime} UTC)`);
     } catch (error) {
       console.error('❌ Failed to load schedule:', error);
       // Clean up corrupted file
@@ -236,6 +198,108 @@ export class DiscordBot {
       this.scheduledData = null;
     } catch (error) {
       console.error('❌ Failed to delete schedule:', error);
+    }
+  }
+
+  /**
+   * Start schedule checker interval
+   * Checks every minute if it's time to send scheduled post
+   */
+  startScheduleChecker() {
+    // Clear existing interval if any
+    if (this.scheduleCheckInterval) {
+      clearInterval(this.scheduleCheckInterval);
+    }
+
+    // Check every 30 seconds
+    this.scheduleCheckInterval = setInterval(async () => {
+      await this.checkAndExecuteSchedule();
+    }, 30000); // 30 seconds
+
+    console.log('⏰ Schedule checker started (checks every 30 seconds)');
+  }
+
+  /**
+   * Check if scheduled time has arrived and execute if needed
+   */
+  async checkAndExecuteSchedule() {
+    try {
+      // Check if there's a schedule
+      if (!this.scheduledData) {
+        // Try to load from file
+        if (fs.existsSync(this.scheduleFilePath)) {
+          const data = JSON.parse(fs.readFileSync(this.scheduleFilePath, 'utf8'));
+          this.scheduledData = data;
+        } else {
+          return; // No schedule
+        }
+      }
+
+      // Parse the scheduled date
+      const [datePart, timePart] = this.scheduledData.datetime.split(' ');
+      const [year, month, day] = datePart.split('-').map(Number);
+      const [hour, minute] = timePart.split(':').map(Number);
+      const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+      const now = new Date();
+
+      // Check if it's time to send (within 1 minute window)
+      const timeDiff = scheduledDate.getTime() - now.getTime();
+      
+      if (timeDiff <= 0 && timeDiff > -60000) {
+        // Time has arrived! Send the post
+        console.log('🎯 Scheduled time reached! Sending distribution...');
+        await this.executeScheduledPost();
+      } else if (timeDiff <= -60000) {
+        // More than 1 minute late - schedule missed
+        console.log('⚠️ Scheduled time has passed by more than 1 minute, cleaning up');
+        this.deleteSchedule();
+      }
+    } catch (error) {
+      console.error('❌ Error in schedule checker:', error);
+    }
+  }
+
+  /**
+   * Execute the scheduled post
+   */
+  async executeScheduledPost() {
+    try {
+      // Get the channel
+      const channel = await this.client.channels.fetch(this.scheduledData.channelId);
+      if (!channel) {
+        console.error('❌ Could not find scheduled channel');
+        this.deleteSchedule();
+        return;
+      }
+
+      console.log('🔄 Refreshing data from Google Sheets before scheduled post...');
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+      
+      const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+      this.distributionManager.distribute(this.playersData, sortColumn);
+      console.log(`✅ Data refreshed: ${this.playersData.length} players`);
+      
+      const formattedText = this.distributionManager.getFormattedDistribution();
+      
+      if (formattedText && formattedText.length > 50) {
+        await this.sendLongMessage(channel, formattedText, true, true);
+        console.log(`✅ Scheduled post sent to ${channel.name}`);
+      } else {
+        console.error('❌ No distribution data to send');
+        await channel.send('❌ Error: No distribution data available. Please run /swap first.');
+      }
+
+      // Clean up after sending
+      this.deleteSchedule();
+      this.scheduledPost = null;
+    } catch (error) {
+      console.error('❌ Error sending scheduled post:', error);
+      try {
+        const channel = await this.client.channels.fetch(this.scheduledData.channelId);
+        await channel.send('❌ Error sending scheduled distribution. Please check bot logs.');
+      } catch (e) {
+        console.error('❌ Could not send error message to channel');
+      }
     }
   }
 
@@ -1156,6 +1220,8 @@ export class DiscordBot {
 
       const delay = scheduledDate.getTime() - now.getTime();
       const minutesUntil = Math.round(delay / 1000 / 60);
+      const hoursUntil = Math.floor(minutesUntil / 60);
+      const minsUntil = minutesUntil % 60;
 
       // Cancel existing schedule
       if (this.scheduledPost) {
@@ -1170,47 +1236,20 @@ export class DiscordBot {
       };
       this.saveSchedule();
 
-      // Schedule the post
-      this.scheduledPost = setTimeout(async () => {
-        try {
-          // Always refresh data before sending scheduled post
-          console.log('🔄 Refreshing data from Google Sheets before scheduled post...');
-          this.playersData = await fetchPlayersDataWithDiscordNames();
-          
-          // Use last sort column or default to Trophies
-          const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-          
-          // Re-distribute with fresh data
-          this.distributionManager.distribute(this.playersData, sortColumn);
-          console.log(`✅ Data refreshed: ${this.playersData.length} players`);
-          
-          const formattedText = this.distributionManager.getFormattedDistribution();
-          
-          // Check if there's actual content
-          if (formattedText && formattedText.length > 50) {
-            await this.sendLongMessage(channel, formattedText);
-            console.log(`✅ Scheduled post sent to ${channel.name}`);
-          } else {
-            console.error('❌ No distribution data to send');
-            await channel.send('❌ Error: No distribution data available. Please run /swap first.');
-          }
-
-          // Clean up after sending
-          this.deleteSchedule();
-          this.scheduledPost = null;
-        } catch (error) {
-          console.error('❌ Error sending scheduled post:', error);
-          await channel.send('❌ Error sending scheduled distribution. Please check bot logs.');
-        }
-      }, delay);
-
       console.log(`⏰ Schedule set: Will post in ${minutesUntil} minutes (${datetime} UTC)`);
+      console.log(`📅 Scheduled for: ${scheduledDate.toISOString()}`);
+      console.log(`🕐 Current time: ${now.toISOString()}`);
 
-      // Send preview of the message that will be posted
+      // Send confirmation
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
         .setTitle('✅ Distribution Scheduled')
-        .setDescription(`The distribution will be posted in ${channel} at **${datetime} UTC**\n\n⏰ Time until post: **${minutesUntil} minutes**\n\n**Preview of the message:**`)
+        .setDescription(`The distribution will be posted in ${channel} at **${datetime} UTC**`)
+        .addFields(
+          { name: '⏰ Time Until Post', value: `${hoursUntil}h ${minsUntil}m`, inline: true },
+          { name: '📺 Channel', value: `${channel}`, inline: true }
+        )
+        .setFooter({ text: 'The schedule checker runs every 30 seconds to ensure delivery' })
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
@@ -1218,11 +1257,13 @@ export class DiscordBot {
       // Send the actual distribution preview
       const formattedText = this.distributionManager.getFormattedDistribution();
       if (formattedText && formattedText.length > 50) {
+        await interaction.followUp({ content: '**Preview of the scheduled message:**', ephemeral: true });
         await this.sendLongMessage(interaction.channel, formattedText);
       } else {
-        await interaction.followUp('⚠️ No distribution data available yet. Please run /distribute first.');
+        await interaction.followUp({ content: '⚠️ No distribution data available yet. Please run /swap first.', ephemeral: true });
       }
     } catch (error) {
+      console.error('❌ Error in handleSchedule:', error);
       await interaction.editReply('❌ Invalid datetime format! Use: YYYY-MM-DD HH:MM (e.g., 2024-12-25 14:30)');
     }
   }
@@ -1244,8 +1285,8 @@ export class DiscordBot {
     const now = new Date();
     const timeRemaining = scheduledDate.getTime() - now.getTime();
     const minutesRemaining = Math.round(timeRemaining / 1000 / 60);
-    const hoursRemaining = Math.floor(minutesRemaining / 60);
-    const minsRemaining = minutesRemaining % 60;
+    const hoursRemaining = Math.floor(Math.abs(minutesRemaining) / 60);
+    const minsRemaining = Math.abs(minutesRemaining) % 60;
 
     // Get channel
     let channelMention = `<#${this.scheduledData.channelId}>`;
@@ -1256,15 +1297,43 @@ export class DiscordBot {
       console.warn('Could not fetch channel');
     }
 
+    // Determine status
+    let timeRemainingText;
+    let embedColor;
+    let statusText;
+    
+    if (timeRemaining > 60000) {
+      // More than 1 minute in the future
+      timeRemainingText = `${hoursRemaining}h ${minsRemaining}m`;
+      embedColor = 0x00ff00; // Green
+      statusText = '✅ Scheduled';
+    } else if (timeRemaining > 0) {
+      // Less than 1 minute away
+      timeRemainingText = 'Less than 1 minute';
+      embedColor = 0xffaa00; // Orange
+      statusText = '⏳ Sending soon...';
+    } else if (timeRemaining > -60000) {
+      // Up to 1 minute late (still in execution window)
+      timeRemainingText = 'Sending now...';
+      embedColor = 0xffaa00; // Orange
+      statusText = '⏳ Executing...';
+    } else {
+      // More than 1 minute late
+      timeRemainingText = `${hoursRemaining}h ${minsRemaining}m ago`;
+      embedColor = 0xff0000; // Red
+      statusText = '❌ Missed (will be cleaned up)';
+    }
+
     const embed = new EmbedBuilder()
-      .setColor(0x00ff00)
+      .setColor(embedColor)
       .setTitle('📅 Scheduled Distribution')
-      .setDescription('Current schedule information:')
+      .setDescription(`**Status:** ${statusText}`)
       .addFields(
         { name: '📅 Date & Time', value: `${this.scheduledData.datetime} UTC`, inline: false },
         { name: '📺 Channel', value: channelMention, inline: false },
-        { name: '⏰ Time Remaining', value: `${hoursRemaining}h ${minsRemaining}m`, inline: false }
+        { name: '⏰ Time Remaining', value: timeRemainingText, inline: false }
       )
+      .setFooter({ text: 'Schedule checker runs every 30 seconds' })
       .setTimestamp();
 
     await interaction.editReply({ embeds: [embed] });
@@ -1302,50 +1371,9 @@ export class DiscordBot {
           return;
         }
 
-        // Cancel old timeout
-        if (this.scheduledPost) {
-          clearTimeout(this.scheduledPost);
-        }
-
         // Update schedule data
         this.scheduledData.datetime = newDatetime;
-
-        // Create new timeout
-        const delay = scheduledDate.getTime() - now.getTime();
-        const minutesUntil = Math.round(delay / 1000 / 60);
-
-        const channelId = newChannel ? newChannel.id : this.scheduledData.channelId;
-        const channel = await this.client.channels.fetch(channelId);
-
-        this.scheduledPost = setTimeout(async () => {
-          try {
-            console.log('🔄 Refreshing data from Google Sheets before scheduled post...');
-            this.playersData = await fetchPlayersDataWithDiscordNames();
-            
-            const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-            this.distributionManager.distribute(this.playersData, sortColumn);
-            console.log(`✅ Data refreshed: ${this.playersData.length} players`);
-            
-            const formattedText = this.distributionManager.getFormattedDistribution();
-            
-            if (formattedText && formattedText.length > 50) {
-              await this.sendLongMessage(channel, formattedText, true, true);
-              console.log(`✅ Scheduled post sent to ${channel.name}`);
-            } else {
-              console.error('❌ No distribution data to send');
-              await channel.send('❌ Error: No distribution data available. Please run /swap first.');
-            }
-
-            // Clean up after sending
-            this.deleteSchedule();
-            this.scheduledPost = null;
-          } catch (error) {
-            console.error('❌ Error sending scheduled post:', error);
-            await channel.send('❌ Error sending scheduled distribution. Please check bot logs.');
-          }
-        }, delay);
-
-        console.log(`⏰ Schedule updated: Will post in ${minutesUntil} minutes (${newDatetime} UTC)`);
+        console.log(`⏰ Schedule updated to: ${newDatetime} UTC`);
       } catch (error) {
         await interaction.editReply('❌ Invalid datetime format! Use: YYYY-MM-DD HH:MM (e.g., 2024-12-25 14:30)');
         return;
@@ -1355,6 +1383,7 @@ export class DiscordBot {
     // Update channel if provided
     if (newChannel) {
       this.scheduledData.channelId = newChannel.id;
+      console.log(`📺 Schedule channel updated to: ${newChannel.name}`);
     }
 
     // Save updated schedule
@@ -1368,6 +1397,7 @@ export class DiscordBot {
         { name: '📅 Date & Time', value: `${this.scheduledData.datetime} UTC`, inline: false },
         { name: '📺 Channel', value: newChannel ? `${newChannel}` : 'Unchanged', inline: false }
       )
+      .setFooter({ text: 'The schedule checker will handle the new time automatically' })
       .setTimestamp();
 
     await interaction.editReply({ embeds: [embed] });
