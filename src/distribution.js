@@ -62,6 +62,8 @@ export class DistributionManager {
             type: 'excluded',
             target: currentClan || 'Unknown'
           });
+          // Add to excludedPlayers set for count
+          this.excludedPlayers.add(identifier);
         } else if (action === 'RGR' || action === 'OTL' || action === 'RND') {
           // Manual move
           this.wildcardInfo.set(identifier, {
