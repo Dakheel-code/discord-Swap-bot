@@ -385,19 +385,23 @@ export class DiscordBot {
           break;
 
         case 'schedule':
-          await this.handleSchedule(interaction);
-          break;
-
-        case 'viewschedule':
-          await this.handleViewSchedule(interaction);
-          break;
-
-        case 'editschedule':
-          await this.handleEditSchedule(interaction);
-          break;
-
-        case 'deleteschedule':
-          await this.handleDeleteSchedule(interaction);
+          const subcommand = interaction.options.getSubcommand();
+          switch (subcommand) {
+            case 'create':
+              await this.handleSchedule(interaction);
+              break;
+            case 'view':
+              await this.handleViewSchedule(interaction);
+              break;
+            case 'edit':
+              await this.handleEditSchedule(interaction);
+              break;
+            case 'delete':
+              await this.handleDeleteSchedule(interaction);
+              break;
+            default:
+              await interaction.editReply('❌ Unknown schedule subcommand');
+          }
           break;
 
         case 'help':

@@ -76,43 +76,51 @@ export const commands = [
 
   new SlashCommandBuilder()
     .setName('schedule')
-    .setDescription('Schedule automatic distribution posting (UTC timezone)')
-    .addStringOption(option =>
-      option
-        .setName('datetime')
-        .setDescription('Date and time in UTC (YYYY-MM-DD HH:MM, e.g., 2024-12-25 14:30)')
-        .setRequired(true)
+    .setDescription('Manage scheduled distribution posting')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('create')
+        .setDescription('Create a new scheduled distribution (UTC timezone)')
+        .addStringOption(option =>
+          option
+            .setName('datetime')
+            .setDescription('Date and time in UTC (YYYY-MM-DD HH:MM, e.g., 2024-12-25 14:30)')
+            .setRequired(true)
+        )
+        .addChannelOption(option =>
+          option
+            .setName('channel')
+            .setDescription('Channel to post in')
+            .setRequired(true)
+        )
     )
-    .addChannelOption(option =>
-      option
-        .setName('channel')
-        .setDescription('Channel to post in')
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName('viewschedule')
-    .setDescription('View current scheduled distribution'),
-
-  new SlashCommandBuilder()
-    .setName('editschedule')
-    .setDescription('Edit scheduled distribution')
-    .addStringOption(option =>
-      option
-        .setName('datetime')
-        .setDescription('New date and time in UTC (YYYY-MM-DD HH:MM)')
-        .setRequired(false)
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('view')
+        .setDescription('View current scheduled distribution')
     )
-    .addChannelOption(option =>
-      option
-        .setName('channel')
-        .setDescription('New channel to post in')
-        .setRequired(false)
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('edit')
+        .setDescription('Edit scheduled distribution')
+        .addStringOption(option =>
+          option
+            .setName('datetime')
+            .setDescription('New date and time in UTC (YYYY-MM-DD HH:MM)')
+            .setRequired(false)
+        )
+        .addChannelOption(option =>
+          option
+            .setName('channel')
+            .setDescription('New channel to post in')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('delete')
+        .setDescription('Delete scheduled distribution')
     ),
-
-  new SlashCommandBuilder()
-    .setName('deleteschedule')
-    .setDescription('Delete scheduled distribution'),
 
   new SlashCommandBuilder()
     .setName('help')
