@@ -190,15 +190,15 @@ export async function fetchPlayersDataWithDiscordNames() {
     // Fetch Discord mapping
     const discordMapping = await fetchDiscordMapping();
 
-    // Replace names with Discord names based on Player_ID
+    // Replace names with Discord names based on Ingame-ID (player name)
     let playersWithDiscordId = 0;
     let playersWithMention = 0;
     players.forEach((player, index) => {
-      // Try to find Player_ID in different possible column names
-      const playerId = player['Player_ID'] || player['PlayerID'] || player['ID'] || player['player_id'];
+      // Get player's ingame name from column C (Name, Player, USERNAME, etc.)
+      const ingameId = player['Name'] || player['Player'] || player['USERNAME'] || player['Player_ID'] || player['PlayerID'] || player['ID'] || player['player_id'];
       
-      if (playerId && discordMapping.has(String(playerId).trim())) {
-        const mappingData = discordMapping.get(String(playerId).trim());
+      if (ingameId && discordMapping.has(String(ingameId).trim())) {
+        const mappingData = discordMapping.get(String(ingameId).trim());
         let discordName = mappingData.discordName;
         let discordId = mappingData.discordId; // Get Discord-ID from column D
         const action = mappingData.action;
@@ -243,7 +243,7 @@ export async function fetchPlayersDataWithDiscordNames() {
         
         // Debug: Log first 3 players
         if (index < 3) {
-          console.log(`📋 Player ${index + 1}: PlayerId="${playerId}", DiscordName="${discordName}", Discord-ID="${discordId || 'N/A'}", Action="${action}"`);
+          console.log(`📋 Player ${index + 1}: IngameId="${ingameId}", DiscordName="${discordName}", Discord-ID="${discordId || 'N/A'}", Action="${action}"`);
         }
       } else {
         // Keep original name if no mapping found
