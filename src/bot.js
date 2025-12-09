@@ -486,7 +486,7 @@ export class DiscordBot {
     try {
       await interaction.deferReply({ ephemeral: true });
       
-      if (customId === 'select_players_done' || customId === 'select_rgr_done' || customId === 'select_otl_done' || customId === 'select_rnd_done') {
+      if (customId === 'select_players_done' || customId === 'select_rgr_done' || customId === 'select_otl_done' || customId === 'select_rnd_done' || customId === 'select_wildcards_done') {
         await this.handleSelectPlayersDone(interaction);
       } else {
         await interaction.editReply('❌ Unknown select menu');
@@ -547,10 +547,11 @@ export class DiscordBot {
     const playersByClans = {
       RGR: [],
       OTL: [],
-      RND: []
+      RND: [],
+      WILDCARDS: []
     };
     
-    ['RGR', 'OTL', 'RND'].forEach(groupName => {
+    ['RGR', 'OTL', 'RND', 'WILDCARDS'].forEach(groupName => {
       if (this.distributionManager.groups[groupName]) {
         this.distributionManager.groups[groupName].forEach(player => {
           // Use original name for display, not Discord mention
@@ -572,7 +573,7 @@ export class DiscordBot {
       }
     });
 
-    const totalNotDone = playersByClans.RGR.length + playersByClans.OTL.length + playersByClans.RND.length;
+    const totalNotDone = playersByClans.RGR.length + playersByClans.OTL.length + playersByClans.RND.length + playersByClans.WILDCARDS.length;
 
     if (totalNotDone === 0) {
       await interaction.editReply('✅ All players have moved!');
@@ -623,7 +624,7 @@ export class DiscordBot {
       const rgrSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_rgr_done')
         .setPlaceholder(`RGR (${playersByClans.RGR.length} remaining)`)
-        .setMinValues(1)
+        .setMinValues(0)
         .setMaxValues(Math.min(rgrOptions.length, 25))
         .addOptions(rgrOptions);
 
@@ -641,7 +642,7 @@ export class DiscordBot {
       const otlSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_otl_done')
         .setPlaceholder(`OTL (${playersByClans.OTL.length} remaining)`)
-        .setMinValues(1)
+        .setMinValues(0)
         .setMaxValues(Math.min(otlOptions.length, 25))
         .addOptions(otlOptions);
 
@@ -659,11 +660,29 @@ export class DiscordBot {
       const rndSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_rnd_done')
         .setPlaceholder(`RND (${playersByClans.RND.length} remaining)`)
-        .setMinValues(1)
+        .setMinValues(0)
         .setMaxValues(Math.min(rndOptions.length, 25))
         .addOptions(rndOptions);
 
       components.push(new ActionRowBuilder().addComponents(rndSelectMenu));
+    }
+
+    // WILDCARDS Select Menu
+    if (playersByClans.WILDCARDS.length > 0) {
+      const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => ({
+        label: player.name,
+        value: player.identifier,
+        emoji: '🃏'
+      }));
+
+      const wildcardsSelectMenu = new StringSelectMenuBuilder()
+        .setCustomId('select_wildcards_done')
+        .setPlaceholder(`WILDCARDS (${playersByClans.WILDCARDS.length} remaining)`)
+        .setMinValues(0)
+        .setMaxValues(Math.min(wildcardsOptions.length, 25))
+        .addOptions(wildcardsOptions);
+
+      components.push(new ActionRowBuilder().addComponents(wildcardsSelectMenu));
     }
 
     await interaction.editReply({
