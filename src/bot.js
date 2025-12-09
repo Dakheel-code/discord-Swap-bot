@@ -503,7 +503,7 @@ export class DiscordBot {
   async handleSwapsLeftButton(interaction) {
     // Check if distribution exists
     if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
-      await interaction.editReply('⚠️ No distribution found. Please run `/swap` first.');
+      await interaction.editReply('⚠️ No swap found. Please run `/swap` first.');
       return;
     }
 
@@ -530,7 +530,7 @@ export class DiscordBot {
     const formattedText = this.distributionManager.getFormattedDistribution();
     await this.updateDistributionMessages(formattedText);
     
-    await interaction.editReply('✅ Data refreshed and distribution updated!');
+    await interaction.editReply('✅ Data refreshed and swap updated!');
   }
 
   /**
@@ -539,7 +539,7 @@ export class DiscordBot {
   async handleMarkDoneButton(interaction) {
     // Check if distribution exists
     if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
-      await interaction.editReply('⚠️ No distribution found. Please run `/swap` first.');
+      await interaction.editReply('⚠️ No swap found. Please run `/swap` first.');
       return;
     }
 
