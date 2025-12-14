@@ -1388,9 +1388,13 @@ export class DiscordBot {
     // Get the swaps left text
     const swapsLeftText = this.distributionManager.getSwapsLeft();
 
-    // Send the list publicly (not ephemeral)
+    // Send the list publicly (not ephemeral) and save the message
     await interaction.editReply('📋 Sending Swaps Left to channel...');
-    await interaction.channel.send(swapsLeftText);
+    const swapsLeftMessage = await interaction.channel.send(swapsLeftText);
+    
+    // Store the message for later updates
+    this.lastSwapsLeftMessages = [swapsLeftMessage];
+    this.saveMessageIds();
   }
 
   /**
