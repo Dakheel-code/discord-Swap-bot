@@ -1074,6 +1074,13 @@ export class DiscordBot {
       for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp({ content: chunks[i], ephemeral: true });
       }
+      
+      // Send Admin Controls after showing distribution
+      await interaction.followUp({
+        content: '**Admin Controls** (Only you can see this)',
+        components: this.createDistributionButtons(),
+        ephemeral: true
+      });
     } catch (error) {
       console.error('❌ Error showing distribution:', error);
       await interaction.editReply(`❌ Error: ${error.message}`);
