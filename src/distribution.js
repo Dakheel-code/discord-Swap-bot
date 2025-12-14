@@ -742,7 +742,9 @@ export class DistributionManager {
       output += `Total players remaining: **${playersNotMoved.length}**\n\n`;
       
       playersNotMoved.forEach(player => {
-        output += `• ${player.name} - Please move to **${player.targetClan}**\n`;
+        // Use mention if available, otherwise use name
+        const playerDisplay = player.mention || player.name;
+        output += `• ${playerDisplay} ➜ Please move ➜ **${player.targetClan}**\n`;
       });
     }
 
