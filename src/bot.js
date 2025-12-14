@@ -387,10 +387,6 @@ export class DiscordBot {
           await this.handleHelp(interaction);
           break;
 
-        case 'map':
-          await this.handleMap(interaction);
-          break;
-
         case 'swapsleft':
           await this.handleSwapsLeft(interaction);
           break;
@@ -463,6 +459,12 @@ export class DiscordBot {
       // Handle Schedule button - opens schedule UI
       if (customId === 'open_schedule') {
         await this.handleOpenScheduleButton(interaction);
+        return;
+      }
+      
+      // Handle Add Player button - opens Modal
+      if (customId === 'add_player') {
+        await this.handleAddPlayerButton(interaction);
         return;
       }
       
@@ -826,6 +828,40 @@ export class DiscordBot {
   }
 
   /**
+   * Handle Add Player button - opens Modal
+   */
+  async handleAddPlayerButton(interaction) {
+    const modal = new ModalBuilder()
+      .setCustomId('add_player_modal')
+      .setTitle('➕ Add a Player');
+
+    const ingameIdInput = new TextInputBuilder()
+      .setCustomId('ingame_id')
+      .setLabel('In-game Player Name/ID')
+      .setPlaceholder('Enter the player name as it appears in-game')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMinLength(1)
+      .setMaxLength(100);
+
+    const discordIdInput = new TextInputBuilder()
+      .setCustomId('discord_id')
+      .setLabel('Discord User ID')
+      .setPlaceholder('Right-click user → Copy User ID (e.g., 123456789012345678)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMinLength(17)
+      .setMaxLength(20);
+
+    const ingameRow = new ActionRowBuilder().addComponents(ingameIdInput);
+    const discordRow = new ActionRowBuilder().addComponents(discordIdInput);
+
+    modal.addComponents(ingameRow, discordRow);
+
+    await interaction.showModal(modal);
+  }
+
+  /**
    * Handle Schedule button from Admin Controls
    */
   async handleOpenScheduleButton(interaction) {
@@ -989,6 +1025,52 @@ export class DiscordBot {
           this.pendingScheduleChannel.delete(interaction.user.id);
         } else {
           await interaction.editReply(`❌ ${result.error}`);
+        }
+      }
+      
+      // Handle Add Player Modal
+      if (customId === 'add_player_modal') {
+        await interaction.deferReply({ ephemeral: true });
+        
+        const ingameId = interaction.fields.getTextInputValue('ingame_id').trim();
+        const discordId = interaction.fields.getTextInputValue('discord_id').trim();
+        
+        // Validate Discord ID (should be numeric)
+        if (!/^\d{17,20}$/.test(discordId)) {
+          await interaction.editReply('❌ Invalid Discord ID. It should be a 17-20 digit number.\n\nTo get a Discord ID:\n1. Enable Developer Mode in Discord Settings\n2. Right-click on the user\n3. Click "Copy User ID"');
+          return;
+        }
+        
+        try {
+          // Try to fetch the user to verify the ID exists
+          const user = await this.client.users.fetch(discordId).catch(() => null);
+          
+          if (!user) {
+            await interaction.editReply(`❌ Could not find a Discord user with ID: ${discordId}`);
+            return;
+          }
+          
+          // Map the player
+          const success = await mapPlayerToDiscord(ingameId, discordId);
+          
+          if (success) {
+            const embed = new EmbedBuilder()
+              .setColor(0x00ff00)
+              .setTitle('✅ Player Added')
+              .setDescription(`Successfully mapped player to Discord account`)
+              .addFields(
+                { name: '🎮 In-game Name', value: ingameId, inline: true },
+                { name: '👤 Discord User', value: `<@${discordId}>`, inline: true }
+              )
+              .setTimestamp();
+            
+            await interaction.editReply({ embeds: [embed] });
+          } else {
+            await interaction.editReply(`❌ Failed to add player. Please try again.`);
+          }
+        } catch (error) {
+          console.error('❌ Error adding player:', error);
+          await interaction.editReply(`❌ Error: ${error.message}`);
         }
       }
       
@@ -1562,7 +1644,7 @@ export class DiscordBot {
       // Send admin controls as ephemeral followUp
       await interaction.followUp({
         content: '**Admin Controls** (Only you can see this)',
-        components: [this.createDistributionButtons()],
+        components: this.createDistributionButtons(),
         ephemeral: true
       });
     }
@@ -2487,7 +2569,7 @@ export class DiscordBot {
   async handleAdmin(interaction) {
     await interaction.editReply({
       content: '**Admin Controls** (Only you can see this)',
-      components: [this.createDistributionButtons()]
+      components: this.createDistributionButtons()
     });
   }
 
@@ -2540,7 +2622,8 @@ export class DiscordBot {
    * Create interactive buttons for distribution message
    */
   createDistributionButtons() {
-    const row = new ActionRowBuilder()
+    // Row 1: Main actions
+    const row1 = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
           .setCustomId('show_swaps_left')
@@ -2573,7 +2656,17 @@ export class DiscordBot {
           .setStyle(ButtonStyle.Primary)
       );
     
-    return row;
+    // Row 2: Additional actions
+    const row2 = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('add_player')
+          .setLabel('Add a player')
+          .setEmoji('➕')
+          .setStyle(ButtonStyle.Success)
+      );
+    
+    return [row1, row2];
   }
 
   /**

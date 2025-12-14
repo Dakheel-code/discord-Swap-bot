@@ -44,22 +44,6 @@ export const commands = [
     .setDescription('Show all available commands and usage instructions'),
 
   new SlashCommandBuilder()
-    .setName('map')
-    .setDescription('Map in-game player name to Discord account')
-    .addStringOption(option =>
-      option
-        .setName('ingame_id')
-        .setDescription('In-game player name/ID')
-        .setRequired(true)
-    )
-    .addUserOption(option =>
-      option
-        .setName('discord_id')
-        .setDescription('Discord user to map')
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
     .setName('swapsleft')
     .setDescription('Show players who have not moved yet'),
 
