@@ -532,15 +532,16 @@ export class DistributionManager {
           
           const value = this.sortColumn ? player[this.sortColumn] : '';
           
-          // Format: › @mention • Name • value
+          // Format: › @mention •Name• • value
           let line = '› ';
           if (discordMention) {
             line += discordMention;
             if (originalName) {
-              line += ` • ${originalName}`;
+              line += ` •${originalName}•`;
             }
           } else {
-            line += originalName || this.getPlayerName(player);
+            const displayName = originalName || this.getPlayerName(player);
+            line += `•${displayName}•`;
           }
           
           if (value) {
@@ -598,15 +599,16 @@ export class DistributionManager {
         
         const info = this.wildcardInfo.get(identifier);
         
-        // Build line: - @mention • Name ➜ **CLAN** or ⏸ **Stay in CLAN**
+        // Build line: - @mention •Name• ➜ **CLAN** or ⏸ **Stay in CLAN**
         let line = '- ';
         if (discordMention) {
           line += discordMention;
           if (originalName) {
-            line += ` • ${originalName}`;
+            line += ` •${originalName}•`;
           }
         } else {
-          line += originalName || this.getPlayerName(player);
+          const displayName = originalName || this.getPlayerName(player);
+          line += `•${displayName}•`;
         }
         
         if (info) {
