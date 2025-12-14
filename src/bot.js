@@ -1427,13 +1427,15 @@ export class DiscordBot {
       return;
     }
 
-    // Get players not done, grouped by clan
+    // Get ALL players grouped by clan (including done players)
     const playersByClans = {
       RGR: [],
       OTL: [],
       RND: [],
       WILDCARDS: []
     };
+    
+    let totalNotDone = 0;
     
     ['RGR', 'OTL', 'RND', 'WILDCARDS'].forEach(groupName => {
       if (this.distributionManager.groups[groupName]) {
@@ -1445,31 +1447,31 @@ export class DiscordBot {
             isDone = this.distributionManager.completedPlayers.has(player.DiscordName);
           }
           
-          if (!isDone) {
-            // Get original name from Master_CSV (Name column)
-            const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
-            
-            // Get Discord ID for mention
-            const discordId = player['Discord-ID'] || null;
-            
-            // Truncate label if too long (Discord limit is 100 chars)
-            let label = originalName || identifier;
-            if (label.length > 100) {
-              label = label.substring(0, 97) + '...';
-            }
-            
-            playersByClans[groupName].push({
-              name: label,
-              identifier: identifier,
-              discordId: discordId,
-              originalName: originalName
-            });
+          // Get original name from Master_CSV (Name column)
+          const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
+          
+          // Get Discord ID for mention
+          const discordId = player['Discord-ID'] || null;
+          
+          // Truncate label if too long (Discord limit is 100 chars)
+          // Add ✅ prefix for done players
+          let label = isDone ? `✅ ${originalName || identifier}` : (originalName || identifier);
+          if (label.length > 100) {
+            label = label.substring(0, 97) + '...';
           }
+          
+          playersByClans[groupName].push({
+            name: label,
+            identifier: identifier,
+            discordId: discordId,
+            originalName: originalName,
+            isDone: isDone
+          });
+          
+          if (!isDone) totalNotDone++;
         });
       }
     });
-
-    const totalNotDone = playersByClans.RGR.length + playersByClans.OTL.length + playersByClans.RND.length + playersByClans.WILDCARDS.length;
 
     if (totalNotDone === 0) {
       // Send public completion message
@@ -1513,8 +1515,9 @@ export class DiscordBot {
     
     components.push(buttonsRow);
 
-    // RGR Select Menu
+    // RGR Select Menu - show ALL players
     if (playersByClans.RGR.length > 0) {
+      const rgrRemaining = playersByClans.RGR.filter(p => !p.isDone).length;
       const rgrOptions = playersByClans.RGR.slice(0, 25).map(player => ({
         label: player.name,
         value: player.identifier,
@@ -1523,7 +1526,7 @@ export class DiscordBot {
 
       const rgrSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_rgr_done')
-        .setPlaceholder(`RGR (${playersByClans.RGR.length} remaining)`)
+        .setPlaceholder(`RGR (${rgrRemaining} remaining)`)
         .setMinValues(0)
         .setMaxValues(Math.min(rgrOptions.length, 25))
         .addOptions(rgrOptions);
@@ -1531,8 +1534,9 @@ export class DiscordBot {
       components.push(new ActionRowBuilder().addComponents(rgrSelectMenu));
     }
 
-    // OTL Select Menu
+    // OTL Select Menu - show ALL players
     if (playersByClans.OTL.length > 0) {
+      const otlRemaining = playersByClans.OTL.filter(p => !p.isDone).length;
       const otlOptions = playersByClans.OTL.slice(0, 25).map(player => ({
         label: player.name,
         value: player.identifier,
@@ -1541,7 +1545,7 @@ export class DiscordBot {
 
       const otlSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_otl_done')
-        .setPlaceholder(`OTL (${playersByClans.OTL.length} remaining)`)
+        .setPlaceholder(`OTL (${otlRemaining} remaining)`)
         .setMinValues(0)
         .setMaxValues(Math.min(otlOptions.length, 25))
         .addOptions(otlOptions);
@@ -1549,8 +1553,9 @@ export class DiscordBot {
       components.push(new ActionRowBuilder().addComponents(otlSelectMenu));
     }
 
-    // RND Select Menu
+    // RND Select Menu - show ALL players
     if (playersByClans.RND.length > 0) {
+      const rndRemaining = playersByClans.RND.filter(p => !p.isDone).length;
       const rndOptions = playersByClans.RND.slice(0, 25).map(player => ({
         label: player.name,
         value: player.identifier,
@@ -1559,7 +1564,7 @@ export class DiscordBot {
 
       const rndSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_rnd_done')
-        .setPlaceholder(`RND (${playersByClans.RND.length} remaining)`)
+        .setPlaceholder(`RND (${rndRemaining} remaining)`)
         .setMinValues(0)
         .setMaxValues(Math.min(rndOptions.length, 25))
         .addOptions(rndOptions);
@@ -1567,8 +1572,9 @@ export class DiscordBot {
       components.push(new ActionRowBuilder().addComponents(rndSelectMenu));
     }
 
-    // WILDCARDS Select Menu
+    // WILDCARDS Select Menu - show ALL players
     if (playersByClans.WILDCARDS.length > 0) {
+      const wildcardsRemaining = playersByClans.WILDCARDS.filter(p => !p.isDone).length;
       const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => ({
         label: player.name,
         value: player.identifier
@@ -1576,7 +1582,7 @@ export class DiscordBot {
 
       const wildcardsSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_wildcards_done')
-        .setPlaceholder(`WILDCARDS (${playersByClans.WILDCARDS.length} remaining)`)
+        .setPlaceholder(`WILDCARDS (${wildcardsRemaining} remaining)`)
         .setMinValues(0)
         .setMaxValues(Math.min(wildcardsOptions.length, 25))
         .addOptions(wildcardsOptions);
