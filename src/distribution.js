@@ -607,7 +607,7 @@ export class DistributionManager {
         let suffix = '';
         if (info) {
           if (info.type === 'excluded') {
-            suffix = ` - stays in **${info.target}**`;
+            suffix = ` - Stay in **${info.target}**`;
           } else if (info.type === 'manual') {
             suffix = ` - Move to **${info.target}**`;
           }

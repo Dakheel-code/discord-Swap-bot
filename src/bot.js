@@ -1058,8 +1058,28 @@ export class DiscordBot {
         discriminator: discordUser.discriminator
       });
       
+      // Find player's current clan from playersData
+      let playerCurrentClan = null;
+      if (this.playersData && this.playersData.length > 0) {
+        const player = this.playersData.find(p => p['Discord-ID'] === discordId);
+        if (player) {
+          playerCurrentClan = player.Clan || player.clan || player.Team || player.team || null;
+          console.log(`📋 Player's current clan: ${playerCurrentClan}`);
+        }
+      }
+      
+      // Check if player is already in the target clan - write HOLD instead
+      let actionToWrite = targetGroup;
+      let messageText = `**${discordUser.username}** has been assigned to **${targetGroup}**`;
+      
+      if (playerCurrentClan && playerCurrentClan.toUpperCase() === targetGroup.toUpperCase()) {
+        actionToWrite = 'Hold';
+        messageText = `**${discordUser.username}** will stay in **${targetGroup}** (already in clan)`;
+        console.log(`⏸️ Player already in ${targetGroup}, writing HOLD instead`);
+      }
+      
       // Write directly to Google Sheet Action column
-      await writePlayerAction(discordId, targetGroup);
+      await writePlayerAction(discordId, actionToWrite);
       
       // Refresh distribution and update messages
       this.playersData = await fetchPlayersDataWithDiscordNames();
@@ -1073,8 +1093,8 @@ export class DiscordBot {
       // Success message
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
-        .setTitle('✅ Player Moved')
-        .setDescription(`**${discordUser.username}** has been assigned to **${targetGroup}**`)
+        .setTitle(actionToWrite === 'Hold' ? '⏸️ Player Stays' : '✅ Player Moved')
+        .setDescription(messageText)
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
