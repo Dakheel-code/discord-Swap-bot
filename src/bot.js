@@ -1061,10 +1061,31 @@ export class DiscordBot {
       // Find player's current clan from playersData
       let playerCurrentClan = null;
       if (this.playersData && this.playersData.length > 0) {
-        const player = this.playersData.find(p => p['Discord-ID'] === discordId);
+        // Search by Discord-ID (compare as strings, trimmed)
+        const player = this.playersData.find(p => {
+          const pDiscordId = p['Discord-ID'] || p['DiscordID'] || p['Discord_ID'] || '';
+          return String(pDiscordId).trim() === String(discordId).trim();
+        });
+        
         if (player) {
           playerCurrentClan = player.Clan || player.clan || player.Team || player.team || null;
-          console.log(`📋 Player's current clan: ${playerCurrentClan}`);
+          console.log(`📋 Found player in playersData. Current clan: ${playerCurrentClan}`);
+        } else {
+          console.log(`⚠️ Player not found in playersData by Discord-ID: ${discordId}`);
+          // Debug: Log first 3 players' Discord-IDs
+          console.log(`📋 First 3 players' Discord-IDs:`, this.playersData.slice(0, 3).map(p => p['Discord-ID']));
+        }
+      } else {
+        console.log(`⚠️ playersData is empty, refreshing...`);
+        // Refresh data if not available
+        this.playersData = await fetchPlayersDataWithDiscordNames();
+        const player = this.playersData.find(p => {
+          const pDiscordId = p['Discord-ID'] || p['DiscordID'] || p['Discord_ID'] || '';
+          return String(pDiscordId).trim() === String(discordId).trim();
+        });
+        if (player) {
+          playerCurrentClan = player.Clan || player.clan || player.Team || player.team || null;
+          console.log(`📋 Found player after refresh. Current clan: ${playerCurrentClan}`);
         }
       }
       
