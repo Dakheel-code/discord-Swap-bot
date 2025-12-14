@@ -89,10 +89,10 @@ export const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName('done')
-    .setDescription('Open dropdown menus to mark players as done'),
-
-  new SlashCommandBuilder()
     .setName('swapsleft')
     .setDescription('Show players who have not moved yet'),
+
+  new SlashCommandBuilder()
+    .setName('admin')
+    .setDescription('Show Admin Controls panel'),
 ];

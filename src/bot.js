@@ -404,12 +404,12 @@ export class DiscordBot {
           await this.handleMap(interaction);
           break;
 
-        case 'done':
-          await this.handleDone(interaction);
-          break;
-
         case 'swapsleft':
           await this.handleSwapsLeft(interaction);
+          break;
+
+        case 'admin':
+          await this.handleAdmin(interaction);
           break;
 
         default:
@@ -2387,6 +2387,16 @@ export class DiscordBot {
 
       await interaction.editReply({ embeds: [embed] });
     }
+  }
+
+  /**
+   * Handle /admin command - Show Admin Controls panel
+   */
+  async handleAdmin(interaction) {
+    await interaction.editReply({
+      content: '**Admin Controls** (Only you can see this)',
+      components: [this.createDistributionButtons()]
+    });
   }
 
   /**
