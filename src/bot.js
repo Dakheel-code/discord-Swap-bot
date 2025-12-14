@@ -1601,7 +1601,7 @@ export class DiscordBot {
     
     // Check if any players were selected
     if (!selectedIdentifiers || selectedIdentifiers.length === 0) {
-      await interaction.editReply('⚠️ No players selected');
+      await interaction.editReply('ℹ️ Selection cleared. Select players from the dropdown to mark/unmark them.');
       return;
     }
     
