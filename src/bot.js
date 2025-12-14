@@ -554,8 +554,6 @@ export class DiscordBot {
     ['RGR', 'OTL', 'RND', 'WILDCARDS'].forEach(groupName => {
       if (this.distributionManager.groups[groupName]) {
         this.distributionManager.groups[groupName].forEach(player => {
-          // Use original name for display, not Discord mention
-          const displayName = this.distributionManager.getPlayerName(player);
           const identifier = this.distributionManager.getPlayerIdentifier(player);
           
           let isDone = this.distributionManager.completedPlayers.has(identifier);
@@ -564,9 +562,23 @@ export class DiscordBot {
           }
           
           if (!isDone) {
+            // Get original name from Master_CSV (Name column)
+            const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
+            
+            // Get Discord ID for mention
+            const discordId = player['Discord-ID'] || null;
+            
+            // Truncate label if too long (Discord limit is 100 chars)
+            let label = originalName || identifier;
+            if (label.length > 100) {
+              label = label.substring(0, 97) + '...';
+            }
+            
             playersByClans[groupName].push({
-              name: displayName,
-              identifier: identifier
+              name: label,
+              identifier: identifier,
+              discordId: discordId,
+              originalName: originalName
             });
           }
         });
@@ -619,11 +631,18 @@ export class DiscordBot {
 
     // RGR Select Menu
     if (playersByClans.RGR.length > 0) {
-      const rgrOptions = playersByClans.RGR.slice(0, 25).map(player => ({
-        label: player.name,
-        value: player.identifier,
-        emoji: '🏆'
-      }));
+      const rgrOptions = playersByClans.RGR.slice(0, 25).map(player => {
+        const option = {
+          label: player.originalName || player.name,
+          value: player.identifier,
+          emoji: '🏆'
+        };
+        // Add Discord ID as description if available
+        if (player.discordId) {
+          option.description = `Discord: <@${player.discordId}>`;
+        }
+        return option;
+      });
 
       const rgrSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_rgr_done')
@@ -637,11 +656,18 @@ export class DiscordBot {
 
     // OTL Select Menu
     if (playersByClans.OTL.length > 0) {
-      const otlOptions = playersByClans.OTL.slice(0, 25).map(player => ({
-        label: player.name,
-        value: player.identifier,
-        emoji: '🏆'
-      }));
+      const otlOptions = playersByClans.OTL.slice(0, 25).map(player => {
+        const option = {
+          label: player.originalName || player.name,
+          value: player.identifier,
+          emoji: '🏆'
+        };
+        // Add Discord ID as description if available
+        if (player.discordId) {
+          option.description = `Discord: <@${player.discordId}>`;
+        }
+        return option;
+      });
 
       const otlSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_otl_done')
@@ -655,11 +681,18 @@ export class DiscordBot {
 
     // RND Select Menu
     if (playersByClans.RND.length > 0) {
-      const rndOptions = playersByClans.RND.slice(0, 25).map(player => ({
-        label: player.name,
-        value: player.identifier,
-        emoji: '🏆'
-      }));
+      const rndOptions = playersByClans.RND.slice(0, 25).map(player => {
+        const option = {
+          label: player.originalName || player.name,
+          value: player.identifier,
+          emoji: '🏆'
+        };
+        // Add Discord ID as description if available
+        if (player.discordId) {
+          option.description = `Discord: <@${player.discordId}>`;
+        }
+        return option;
+      });
 
       const rndSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_rnd_done')
@@ -673,10 +706,17 @@ export class DiscordBot {
 
     // WILDCARDS Select Menu
     if (playersByClans.WILDCARDS.length > 0) {
-      const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => ({
-        label: player.name,
-        value: player.identifier
-      }));
+      const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => {
+        const option = {
+          label: player.originalName || player.name,
+          value: player.identifier
+        };
+        // Add Discord ID as description if available
+        if (player.discordId) {
+          option.description = `Discord: <@${player.discordId}>`;
+        }
+        return option;
+      });
 
       const wildcardsSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_wildcards_done')
