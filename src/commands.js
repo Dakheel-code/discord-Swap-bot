@@ -33,16 +33,6 @@ export const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName('hold')
-    .setDescription('Exclude players from distribution')
-    .addUserOption(option =>
-      option
-        .setName('player')
-        .setDescription('Discord user to exclude')
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
     .setName('include')
     .setDescription('Include a previously excluded player')
     .addUserOption(option =>

@@ -375,9 +375,6 @@ export class DiscordBot {
           await this.handleMove(interaction);
           break;
 
-        case 'hold':
-          await this.handleExclude(interaction);
-          break;
 
         case 'include':
           await this.handleInclude(interaction);
@@ -547,7 +544,7 @@ export class DiscordBot {
         // Update the embed to show selected channel
         const embed = new EmbedBuilder()
           .setColor(0x5865F2)
-          .setTitle('📅 Schedule Distribution')
+          .setTitle('📅 Schedule Swap')
           .setDescription('**Step 1:** ✅ Channel selected\n**Step 2:** Click "Set Date & Time" to enter the schedule time')
           .addFields(
             { name: '📺 Channel', value: `${selectedChannel}`, inline: true },
@@ -673,8 +670,8 @@ export class DiscordBot {
           
           const embed = new EmbedBuilder()
             .setColor(0x00ff00)
-            .setTitle('✅ Distribution Scheduled')
-            .setDescription(`The distribution will be posted in ${channel} at **${datetime} UTC**`)
+            .setTitle('✅ Swap Scheduled')
+            .setDescription(`The swap will be posted in ${channel} at **${datetime} UTC**`)
             .addFields(
               { name: '⏰ Time Until Post', value: `${result.hoursUntil}h ${result.minsUntil}m`, inline: true },
               { name: '📺 Channel', value: `${channel}`, inline: true }
@@ -682,41 +679,19 @@ export class DiscordBot {
             .setFooter({ text: 'The schedule checker runs every 30 seconds to ensure delivery' })
             .setTimestamp();
 
-          await interaction.editReply({ embeds: [embed] });
+          // Add preview button
+          const buttonRow = new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId('schedule_view_preview')
+                .setLabel('👁️ Preview Message')
+                .setStyle(ButtonStyle.Secondary)
+            );
+
+          await interaction.editReply({ embeds: [embed], components: [buttonRow] });
           
           // Clean up
           this.pendingScheduleChannel.delete(interaction.user.id);
-          
-          // Send preview
-          const formattedText = this.distributionManager.getFormattedDistribution();
-          if (formattedText && formattedText.length > 50) {
-            const maxLength = 2000;
-            const chunks = [];
-            let currentChunk = '';
-            const lines = formattedText.split('\n');
-            
-            for (const line of lines) {
-              if ((currentChunk + line + '\n').length > maxLength) {
-                if (currentChunk) chunks.push(currentChunk);
-                currentChunk = line + '\n';
-              } else {
-                currentChunk += line + '\n';
-              }
-            }
-            if (currentChunk) chunks.push(currentChunk);
-            
-            await interaction.followUp({ 
-              content: '**Preview of the scheduled message:**\n\n' + chunks[0], 
-              ephemeral: true 
-            });
-            
-            for (let i = 1; i < chunks.length; i++) {
-              await interaction.followUp({ 
-                content: chunks[i], 
-                ephemeral: true 
-              });
-            }
-          }
         } else {
           await interaction.editReply(`❌ ${result.error}`);
         }
@@ -1678,7 +1653,7 @@ export class DiscordBot {
       
       const embed = new EmbedBuilder()
         .setColor(color)
-        .setTitle('📅 Schedule Management')
+        .setTitle('📅 Swap Schedule')
         .setDescription('You have an active schedule:')
         .addFields(
           { name: '📺 Channel', value: channel ? `${channel}` : 'Unknown', inline: true },
@@ -1737,7 +1712,7 @@ export class DiscordBot {
 
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
-      .setTitle('📅 Create New Schedule')
+      .setTitle('📅 Schedule Swap')
       .setDescription('**Step 1:** Select a channel\n**Step 2:** Click "Set Date & Time"')
       .addFields(
         { name: '📺 Channel', value: '_Not selected_', inline: true },
