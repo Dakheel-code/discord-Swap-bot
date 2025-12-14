@@ -725,7 +725,7 @@ export class DiscordBot {
     // Parse: player_INDEX_DISCORDID
     const parts = selectedValue.split('_');
     const playerIndex = parseInt(parts[1]);
-    const discordId = parts.slice(2).join('_'); // In case ID has underscores
+    const discordIdFromValue = parts.slice(2).join('_'); // In case ID has underscores
     
     if (!this.playersData || playerIndex >= this.playersData.length) {
       await interaction.editReply('❌ Player not found. Please try again.');
@@ -735,11 +735,19 @@ export class DiscordBot {
     const player = this.playersData[playerIndex];
     const playerName = player.Name || player.Player || player.USERNAME || 'Unknown';
     
+    // Get Discord ID from player data (more reliable than from value)
+    const discordId = player['Discord-ID'] || (discordIdFromValue !== 'no_id' ? discordIdFromValue : null);
+    
+    console.log(`📋 Selected player: "${playerName}" (index: ${playerIndex})`);
+    console.log(`   Discord-ID from data: "${player['Discord-ID']}"`);
+    console.log(`   Discord-ID from value: "${discordIdFromValue}"`);
+    console.log(`   Final Discord-ID: "${discordId}"`);
+    
     // Store selected player for this user
     this.pendingMovePlayer = this.pendingMovePlayer || new Map();
     this.pendingMovePlayer.set(interaction.user.id, {
       index: playerIndex,
-      discordId: discordId !== 'no_id' ? discordId : null,
+      discordId: discordId,
       name: playerName
     });
     
@@ -777,7 +785,9 @@ export class DiscordBot {
     }
     
     const playerData = this.pendingMovePlayer.get(interaction.user.id);
-    const { discordId, name: playerName } = playerData;
+    const { discordId, name: playerName, index: playerIndex } = playerData;
+    
+    console.log(`🔀 Move request: Player "${playerName}" (index: ${playerIndex}, discordId: ${discordId}) to ${targetClan}`);
     
     if (!discordId) {
       await interaction.editReply(`❌ Player "${playerName}" doesn't have a Discord ID mapped. Use /map first.`);
@@ -785,18 +795,26 @@ export class DiscordBot {
       return;
     }
     
-    // Write action to Google Sheet
-    const success = await writePlayerAction(discordId, targetClan);
-    
-    if (success) {
+    try {
+      // Write action to Google Sheet
+      console.log(`📝 Writing action to Google Sheet: discordId="${discordId}", action="${targetClan}"`);
+      await writePlayerAction(discordId, targetClan);
+      console.log(`✅ Action written successfully`);
+      
       // Refresh and redistribute
+      console.log(`🔄 Refreshing player data...`);
       this.playersData = await fetchPlayersDataWithDiscordNames();
       this.distributionManager.distribute(this.playersData);
+      console.log(`✅ Data refreshed and redistributed`);
       
       // Update messages if they exist
-      if (this.lastDistributionMessages.length > 0) {
+      if (this.lastDistributionMessages && this.lastDistributionMessages.length > 0) {
+        console.log(`📝 Updating ${this.lastDistributionMessages.length} distribution messages...`);
         const formattedText = this.distributionManager.getFormattedDistribution();
         await this.updateDistributionMessages(formattedText);
+        console.log(`✅ Messages updated`);
+      } else {
+        console.log(`⚠️ No distribution messages to update (lastDistributionMessages: ${this.lastDistributionMessages?.length || 0})`);
       }
       
       const embed = new EmbedBuilder()
@@ -806,8 +824,9 @@ export class DiscordBot {
         .setTimestamp();
       
       await interaction.editReply({ embeds: [embed], components: [] });
-    } else {
-      await interaction.editReply(`❌ Failed to move player. Make sure they are mapped with /map.`);
+    } catch (error) {
+      console.error(`❌ Error moving player:`, error);
+      await interaction.editReply(`❌ Failed to move player: ${error.message}`);
     }
     
     // Clean up
