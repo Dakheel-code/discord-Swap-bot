@@ -12,10 +12,6 @@ export const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('Show all available commands and usage instructions'),
-
-  new SlashCommandBuilder()
     .setName('admin')
     .setDescription('Show Admin Controls panel'),
 ];

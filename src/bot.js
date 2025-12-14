@@ -371,10 +371,6 @@ export class DiscordBot {
           await this.handleDistribute(interaction);
           break;
 
-        case 'help':
-          await this.handleHelp(interaction);
-          break;
-
         case 'admin':
           await this.handleAdmin(interaction);
           break;
@@ -479,6 +475,12 @@ export class DiscordBot {
       // Handle Show Distribution button
       if (customId === 'show_distribution') {
         await this.handleShowDistributionButton(interaction);
+        return;
+      }
+      
+      // Handle Help button
+      if (customId === 'show_help') {
+        await this.handleHelpButton(interaction);
         return;
       }
       
@@ -1066,6 +1068,34 @@ export class DiscordBot {
       console.error('❌ Error showing distribution:', error);
       await interaction.editReply(`❌ Error: ${error.message}`);
     }
+  }
+
+  /**
+   * Handle Help button
+   */
+  async handleHelpButton(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('❓ Help - Admin Controls')
+      .setDescription('Here are all the available controls:')
+      .addFields(
+        { name: '📋 Swaps Left', value: 'Show players who haven\'t moved yet', inline: true },
+        { name: '🔄 Refresh', value: 'Refresh data from Google Sheets', inline: true },
+        { name: '✅ Mark Done', value: 'Mark players as done (moved)', inline: true },
+        { name: '🔀 Move', value: 'Move a player to a specific clan', inline: true },
+        { name: '📅 Schedule', value: 'Schedule swap post for later', inline: true },
+        { name: '👁️ Show', value: 'Show current distribution', inline: true },
+        { name: '➕ Add a player', value: 'Map in-game ID to Discord user', inline: true },
+        { name: '🗑️ Reset', value: 'Reset swap or all settings', inline: true }
+      )
+      .addFields(
+        { name: '\n📝 Commands', value: '`/swap` - Create new distribution\n`/admin` - Open this panel', inline: false }
+      )
+      .setFooter({ text: 'All actions are private (only you can see them)' });
+    
+    await interaction.editReply({ embeds: [embed] });
   }
 
   /**
@@ -2922,7 +2952,13 @@ export class DiscordBot {
           .setCustomId('reset_options')
           .setLabel('Reset')
           .setEmoji('🗑️')
-          .setStyle(ButtonStyle.Danger)
+          .setStyle(ButtonStyle.Danger),
+        
+        new ButtonBuilder()
+          .setCustomId('show_help')
+          .setLabel('Help')
+          .setEmoji('❓')
+          .setStyle(ButtonStyle.Secondary)
       );
     
     return [row1, row2];
