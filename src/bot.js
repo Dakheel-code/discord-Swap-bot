@@ -631,18 +631,11 @@ export class DiscordBot {
 
     // RGR Select Menu
     if (playersByClans.RGR.length > 0) {
-      const rgrOptions = playersByClans.RGR.slice(0, 25).map(player => {
-        const option = {
-          label: player.originalName || player.name,
-          value: player.identifier,
-          emoji: '🏆'
-        };
-        // Add Discord ID as description if available
-        if (player.discordId) {
-          option.description = `Discord: <@${player.discordId}>`;
-        }
-        return option;
-      });
+      const rgrOptions = playersByClans.RGR.slice(0, 25).map(player => ({
+        label: player.name,
+        value: player.identifier,
+        emoji: '🏆'
+      }));
 
       const rgrSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_rgr_done')
@@ -656,18 +649,11 @@ export class DiscordBot {
 
     // OTL Select Menu
     if (playersByClans.OTL.length > 0) {
-      const otlOptions = playersByClans.OTL.slice(0, 25).map(player => {
-        const option = {
-          label: player.originalName || player.name,
-          value: player.identifier,
-          emoji: '🏆'
-        };
-        // Add Discord ID as description if available
-        if (player.discordId) {
-          option.description = `Discord: <@${player.discordId}>`;
-        }
-        return option;
-      });
+      const otlOptions = playersByClans.OTL.slice(0, 25).map(player => ({
+        label: player.name,
+        value: player.identifier,
+        emoji: '🏆'
+      }));
 
       const otlSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_otl_done')
@@ -681,18 +667,11 @@ export class DiscordBot {
 
     // RND Select Menu
     if (playersByClans.RND.length > 0) {
-      const rndOptions = playersByClans.RND.slice(0, 25).map(player => {
-        const option = {
-          label: player.originalName || player.name,
-          value: player.identifier,
-          emoji: '🏆'
-        };
-        // Add Discord ID as description if available
-        if (player.discordId) {
-          option.description = `Discord: <@${player.discordId}>`;
-        }
-        return option;
-      });
+      const rndOptions = playersByClans.RND.slice(0, 25).map(player => ({
+        label: player.name,
+        value: player.identifier,
+        emoji: '🏆'
+      }));
 
       const rndSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_rnd_done')
@@ -706,17 +685,10 @@ export class DiscordBot {
 
     // WILDCARDS Select Menu
     if (playersByClans.WILDCARDS.length > 0) {
-      const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => {
-        const option = {
-          label: player.originalName || player.name,
-          value: player.identifier
-        };
-        // Add Discord ID as description if available
-        if (player.discordId) {
-          option.description = `Discord: <@${player.discordId}>`;
-        }
-        return option;
-      });
+      const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => ({
+        label: player.name,
+        value: player.identifier
+      }));
 
       const wildcardsSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_wildcards_done')

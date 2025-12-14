@@ -505,8 +505,18 @@ export class DistributionManager {
         output += '_No players_\n\n';
       } else {
         players.forEach((player, index) => {
-          // Use DiscordName (mention) if available, otherwise use regular name
-          const name = player.DiscordName || this.getPlayerName(player);
+          // Get Discord mention and original name
+          const discordMention = player.DiscordName || '';
+          const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
+          
+          // Build display name: mention + (originalName) if both exist
+          let name;
+          if (discordMention && originalName && !discordMention.includes(originalName)) {
+            name = `${discordMention} (${originalName})`;
+          } else {
+            name = discordMention || originalName || this.getPlayerName(player);
+          }
+          
           const identifier = this.getPlayerIdentifier(player);
           
           // Check if marked as done by identifier OR by DiscordName mention OR by Discord-ID
@@ -559,9 +569,18 @@ export class DistributionManager {
 
       output += `## WILDCARDS (${this.groups.WILDCARDS.length})\n`;
       this.groups.WILDCARDS.forEach((player, index) => {
-        // Use original name without adding emoji (name already has it from sheets)
-        const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || this.getPlayerName(player);
-        const name = originalName;
+        // Get Discord mention and original name
+        const discordMention = player.DiscordName || '';
+        const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
+        
+        // Build display name: mention + (originalName) if both exist
+        let name;
+        if (discordMention && originalName && !discordMention.includes(originalName)) {
+          name = `${discordMention} (${originalName})`;
+        } else {
+          name = discordMention || originalName || this.getPlayerName(player);
+        }
+        
         const identifier = this.getPlayerIdentifier(player);
         
         // Check if marked as done by identifier OR by DiscordName mention OR by Discord-ID
