@@ -961,7 +961,9 @@ export class DiscordBot {
     
     try {
       // Clear distribution data
-      this.distributionManager.reset();
+      this.distributionManager.allPlayers = [];
+      this.distributionManager.groups = { RGR: [], OTL: [], RND: [] };
+      this.distributionManager.wildcards = [];
       this.playersData = [];
       this.lastDistributionMessages = [];
       this.lastSwapsLeftMessages = [];
@@ -993,7 +995,9 @@ export class DiscordBot {
     
     try {
       // Clear distribution data
-      this.distributionManager.reset();
+      this.distributionManager.allPlayers = [];
+      this.distributionManager.groups = { RGR: [], OTL: [], RND: [] };
+      this.distributionManager.wildcards = [];
       this.playersData = [];
       this.lastDistributionMessages = [];
       this.lastSwapsLeftMessages = [];
