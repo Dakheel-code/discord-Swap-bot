@@ -509,13 +509,13 @@ export class DistributionManager {
           const discordMention = player.DiscordName || '';
           const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
           
-          // Build display name with <> format: <mention> (<originalName>)
+          // Build display name: mention `originalName` (name in code block)
           let name;
-          if (discordMention && originalName && !discordMention.includes(originalName)) {
-            name = `<${discordMention}> (${originalName})`;
+          if (discordMention && originalName) {
+            name = `${discordMention} \`${originalName}\``;
           } else {
             const displayName = discordMention || originalName || this.getPlayerName(player);
-            name = `<${displayName}>`;
+            name = `\`${displayName}\``;
           }
           
           const identifier = this.getPlayerIdentifier(player);
@@ -574,13 +574,13 @@ export class DistributionManager {
         const discordMention = player.DiscordName || '';
         const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
         
-        // Build display name with <> format: <mention> (<originalName>)
+        // Build display name: mention `originalName` (name in code block)
         let name;
-        if (discordMention && originalName && !discordMention.includes(originalName)) {
-          name = `<${discordMention}> (${originalName})`;
+        if (discordMention && originalName) {
+          name = `${discordMention} \`${originalName}\``;
         } else {
           const displayName = discordMention || originalName || this.getPlayerName(player);
-          name = `<${displayName}>`;
+          name = `\`${displayName}\``;
         }
         
         const identifier = this.getPlayerIdentifier(player);
