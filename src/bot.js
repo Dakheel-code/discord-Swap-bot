@@ -1242,7 +1242,37 @@ export class DiscordBot {
         ephemeral: true
       });
     } else {
-      // Don't send to channel - just show admin controls
+      // Don't send to channel - just show preview and admin controls (ephemeral)
+      // Send preview as ephemeral
+      const maxLength = 2000;
+      const chunks = [];
+      let currentChunk = '';
+      const lines = formattedText.split('\n');
+      
+      for (const line of lines) {
+        if ((currentChunk + line + '\n').length > maxLength) {
+          if (currentChunk) chunks.push(currentChunk);
+          currentChunk = line + '\n';
+        } else {
+          currentChunk += line + '\n';
+        }
+      }
+      if (currentChunk) chunks.push(currentChunk);
+      
+      // Send first chunk with header
+      await interaction.followUp({ 
+        content: '**Preview:**\n\n' + chunks[0], 
+        ephemeral: true 
+      });
+      
+      // Send remaining chunks
+      for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp({ 
+          content: chunks[i], 
+          ephemeral: true 
+        });
+      }
+      
       // Send admin controls as ephemeral followUp
       await interaction.followUp({
         content: '**Admin Controls** (Only you can see this)',
