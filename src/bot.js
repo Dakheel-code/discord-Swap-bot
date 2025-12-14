@@ -1687,7 +1687,8 @@ export class DiscordBot {
 
     // Update swapsleft messages if they exist
     if (this.lastSwapsLeftMessages && this.lastSwapsLeftMessages.length > 0) {
-      const swapsLeftText = this.distributionManager.getSwapsLeft();
+      // Use hideCompleted=false to show all players with checkmarks for updates
+      const swapsLeftText = this.distributionManager.getSwapsLeft(false);
       const maxLength = 2000;
       const chunks = [];
       

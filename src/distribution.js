@@ -638,14 +638,16 @@ export class DistributionManager {
   }
 
   /**
-   * Get formatted list of all players with checkmark for those who moved
-   * @returns {string} Formatted text with all players (✅ for done)
+   * Get formatted list of players for Swaps Left
+   * @param {boolean} hideCompleted - If true, hide players who are already done (for new messages)
+   * @returns {string} Formatted text
    */
-  getSwapsLeft() {
+  getSwapsLeft(hideCompleted = true) {
     let output = '**SWAPS LEFT**\n\n';
     
     const allPlayers = [];
     let doneCount = 0;
+    let totalCount = 0;
 
     // Check all groups (RGR, OTL, RND)
     ['RGR', 'OTL', 'RND'].forEach(groupName => {
@@ -677,15 +679,18 @@ export class DistributionManager {
           }
         }
         
+        totalCount++;
         if (isDone) doneCount++;
         
-        // Add all players to list
-        allPlayers.push({
-          name: displayName,
-          mention: mention,
-          targetClan: groupName,
-          isDone: isDone
-        });
+        // Add player to list (skip if hideCompleted and player is done)
+        if (!hideCompleted || !isDone) {
+          allPlayers.push({
+            name: displayName,
+            mention: mention,
+            targetClan: groupName,
+            isDone: isDone
+          });
+        }
       });
     });
 
@@ -726,24 +731,27 @@ export class DistributionManager {
           }
         }
         
+        totalCount++;
         if (isDone) doneCount++;
         
-        // Add all players to list
-        allPlayers.push({
-          name: displayName,
-          mention: mention,
-          targetClan: targetClan,
-          isDone: isDone
-        });
+        // Add player to list (skip if hideCompleted and player is done)
+        if (!hideCompleted || !isDone) {
+          allPlayers.push({
+            name: displayName,
+            mention: mention,
+            targetClan: targetClan,
+            isDone: isDone
+          });
+        }
       });
     }
 
     // Format output
-    const remainingCount = allPlayers.length - doneCount;
+    const remainingCount = totalCount - doneCount;
     if (remainingCount === 0) {
       output += '✅ All players have moved!\n';
     } else {
-      output += `Total players remaining: **${remainingCount}** / ${allPlayers.length}\n\n`;
+      output += `Total players remaining: **${remainingCount}** / ${totalCount}\n\n`;
     }
     
     allPlayers.forEach(player => {
