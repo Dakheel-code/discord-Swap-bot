@@ -598,12 +598,12 @@ export class DistributionManager {
         
         const info = this.wildcardInfo.get(identifier);
         
-        // Build line: - @mention Name ➜ **CLAN** or ⏸ **Stay in CLAN**
+        // Build line: - @mention • Name ➜ **CLAN** or ⏸ **Stay in CLAN**
         let line = '- ';
         if (discordMention) {
           line += discordMention;
           if (originalName) {
-            line += ` ${originalName}`;
+            line += ` • ${originalName}`;
           }
         } else {
           line += originalName || this.getPlayerName(player);
