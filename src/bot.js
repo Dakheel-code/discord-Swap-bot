@@ -392,10 +392,6 @@ export class DiscordBot {
           await this.handleReset(interaction);
           break;
 
-        case 'schedule':
-          await this.handleScheduleMain(interaction);
-          break;
-
         case 'help':
           await this.handleHelp(interaction);
           break;
@@ -473,6 +469,11 @@ export class DiscordBot {
         return;
       }
       
+      // Handle Schedule button - opens schedule UI
+      if (customId === 'open_schedule') {
+        await this.handleOpenScheduleButton(interaction);
+        return;
+      }
       
       await interaction.deferReply({ ephemeral: true });
       
@@ -831,6 +832,106 @@ export class DiscordBot {
     
     // Clean up
     this.pendingMovePlayer.delete(interaction.user.id);
+  }
+
+  /**
+   * Handle Schedule button from Admin Controls
+   */
+  async handleOpenScheduleButton(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    // Check if schedule exists
+    if (this.scheduledData) {
+      // Show existing schedule with management options
+      const scheduledTime = new Date(this.scheduledData.timestamp);
+      const now = new Date();
+      const diff = scheduledTime - now;
+      
+      let timeStatus;
+      let color;
+      
+      if (diff > 0) {
+        const hoursUntil = Math.floor(diff / 1000 / 60 / 60);
+        const minsUntil = Math.floor((diff / 1000 / 60) % 60);
+        timeStatus = `${hoursUntil}h ${minsUntil}m remaining`;
+        color = 0x00ff00;
+      } else {
+        const hoursAgo = Math.floor(Math.abs(diff) / 1000 / 60 / 60);
+        const minsAgo = Math.floor((Math.abs(diff) / 1000 / 60) % 60);
+        timeStatus = `${hoursAgo}h ${minsAgo}m ago (pending execution)`;
+        color = 0xffa500;
+      }
+      
+      const channel = await this.client.channels.fetch(this.scheduledData.channelId).catch(() => null);
+      
+      const embed = new EmbedBuilder()
+        .setColor(color)
+        .setTitle('📅 Swap Schedule')
+        .setDescription('You have an active schedule:')
+        .addFields(
+          { name: '📺 Channel', value: channel ? `${channel}` : 'Unknown', inline: true },
+          { name: '⏰ Date & Time (UTC)', value: this.scheduledData.datetime, inline: true },
+          { name: '⏳ Status', value: timeStatus, inline: false }
+        )
+        .setFooter({ text: 'Use the buttons below to manage your schedule' });
+
+      const buttonRow = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId('schedule_edit')
+            .setLabel('Edit')
+            .setEmoji('✏️')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('schedule_delete')
+            .setLabel('Delete')
+            .setEmoji('🗑️')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId('schedule_view_preview')
+            .setLabel('Preview')
+            .setEmoji('👁️')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+      await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+    } else {
+      // Show schedule creation UI
+      const channelSelect = new ChannelSelectMenuBuilder()
+        .setCustomId('schedule_channel_select')
+        .setPlaceholder('Select a channel to post in')
+        .setChannelTypes(ChannelType.GuildText);
+
+      const channelRow = new ActionRowBuilder().addComponents(channelSelect);
+
+      const buttonRow = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId('schedule_set_time')
+            .setLabel('Set Date & Time')
+            .setEmoji('📅')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('schedule_cancel')
+            .setLabel('Cancel')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+      const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle('📅 Schedule Swap')
+        .setDescription('**Step 1:** Select a channel\n**Step 2:** Click "Set Date & Time"')
+        .addFields(
+          { name: '📺 Channel', value: '_Not selected_', inline: true },
+          { name: '⏰ Date & Time', value: '_Not set_', inline: true }
+        )
+        .setFooter({ text: 'All times are in UTC • Default: Tomorrow 03:30' });
+
+      await interaction.editReply({
+        embeds: [embed],
+        components: [channelRow, buttonRow]
+      });
+    }
   }
 
   /**
@@ -2452,9 +2553,9 @@ export class DiscordBot {
       .addComponents(
         new ButtonBuilder()
           .setCustomId('show_swaps_left')
-          .setLabel('Show Swaps Left')
+          .setLabel('Swaps Left')
           .setEmoji('📋')
-          .setStyle(ButtonStyle.Primary),
+          .setStyle(ButtonStyle.Secondary),
         
         new ButtonBuilder()
           .setCustomId('refresh_data')
@@ -2472,6 +2573,12 @@ export class DiscordBot {
           .setCustomId('move_player')
           .setLabel('Move')
           .setEmoji('🔀')
+          .setStyle(ButtonStyle.Primary),
+        
+        new ButtonBuilder()
+          .setCustomId('open_schedule')
+          .setLabel('Schedule')
+          .setEmoji('📅')
           .setStyle(ButtonStyle.Primary)
       );
     

@@ -65,10 +65,6 @@ export const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName('schedule')
-    .setDescription('Manage scheduled distribution posting (interactive UI)'),
-
-  new SlashCommandBuilder()
     .setName('help')
     .setDescription('Show all available commands and usage instructions'),
 
