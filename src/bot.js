@@ -27,6 +27,7 @@ export class DiscordBot {
     this.lastChannelId = null; // Store channel ID for message retrieval
     this.pendingScheduleChannel = new Map(); // Store pending channel selection for schedule (userId -> channelId)
     this.lastSelectedPlayers = new Map(); // Store last selected players for mark done (userId -> [identifiers])
+    this.swapsLeftPlayersList = []; // Store players shown in last Swaps Left message
   }
 
   /**
@@ -1385,15 +1386,16 @@ export class DiscordBot {
       return;
     }
 
-    // Get the swaps left text
-    const swapsLeftText = this.distributionManager.getSwapsLeft();
+    // Get the swaps left text and players list (hideCompleted=true for new messages)
+    const result = this.distributionManager.getSwapsLeft(true);
 
     // Send the list publicly (not ephemeral) and save the message
     await interaction.editReply('📋 Sending Swaps Left to channel...');
-    const swapsLeftMessage = await interaction.channel.send(swapsLeftText);
+    const swapsLeftMessage = await interaction.channel.send(result.text);
     
-    // Store the message for later updates
+    // Store the message and players list for later updates
     this.lastSwapsLeftMessages = [swapsLeftMessage];
+    this.swapsLeftPlayersList = result.players;
     this.saveMessageIds();
   }
 
@@ -1687,8 +1689,9 @@ export class DiscordBot {
 
     // Update swapsleft messages if they exist
     if (this.lastSwapsLeftMessages && this.lastSwapsLeftMessages.length > 0) {
-      // Use hideCompleted=false to show all players with checkmarks for updates
-      const swapsLeftText = this.distributionManager.getSwapsLeft(false);
+      // Use the stored players list for updates (only show players from original message)
+      const result = this.distributionManager.getSwapsLeft(false, this.swapsLeftPlayersList);
+      const swapsLeftText = result.text;
       const maxLength = 2000;
       const chunks = [];
       

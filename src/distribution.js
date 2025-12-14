@@ -640,11 +640,61 @@ export class DistributionManager {
   /**
    * Get formatted list of players for Swaps Left
    * @param {boolean} hideCompleted - If true, hide players who are already done (for new messages)
-   * @returns {string} Formatted text
+   * @param {Array} specificPlayers - If provided, only show these players (for updates)
+   * @returns {object} { text: string, players: Array } - Formatted text and list of players shown
    */
-  getSwapsLeft(hideCompleted = true) {
+  getSwapsLeft(hideCompleted = true, specificPlayers = null) {
     let output = '**SWAPS LEFT**\n\n';
     
+    // If specificPlayers is provided, use that list for updates
+    if (specificPlayers && specificPlayers.length > 0) {
+      let doneCount = 0;
+      const totalCount = specificPlayers.length;
+      
+      // Update isDone status for each player
+      specificPlayers.forEach(player => {
+        const identifier = player.name;
+        let isDone = this.completedPlayers.has(identifier);
+        
+        // Check by mention
+        if (!isDone && player.mention) {
+          isDone = this.completedPlayers.has(player.mention);
+        }
+        
+        // Check by Discord-ID in mention
+        if (!isDone && player.mention) {
+          const match = player.mention.match(/<@(\d+)>/);
+          if (match) {
+            for (const completed of this.completedPlayers) {
+              if (completed.includes(match[1])) {
+                isDone = true;
+                break;
+              }
+            }
+          }
+        }
+        
+        player.isDone = isDone;
+        if (isDone) doneCount++;
+      });
+      
+      const remainingCount = totalCount - doneCount;
+      if (remainingCount === 0) {
+        output += '✅ All players have moved!\n';
+      } else {
+        output += `Total players remaining: **${remainingCount}** / ${totalCount}\n\n`;
+      }
+      
+      specificPlayers.forEach(player => {
+        const playerDisplay = player.mention ? `${player.mention} ${player.name}` : player.name;
+        const checkmark = player.isDone ? ' ✅' : '';
+        output += `• ${playerDisplay} - Please move ➜ **${player.targetClan}**${checkmark}\n`;
+      });
+      
+      return { text: output, players: specificPlayers };
+    }
+    
+    // Build new list from scratch
     const allPlayers = [];
     let doneCount = 0;
     let totalCount = 0;
@@ -747,11 +797,11 @@ export class DistributionManager {
     }
 
     // Format output
-    const remainingCount = totalCount - doneCount;
-    if (remainingCount === 0) {
+    const remainingCount = allPlayers.filter(p => !p.isDone).length;
+    if (remainingCount === 0 && allPlayers.length > 0) {
       output += '✅ All players have moved!\n';
     } else {
-      output += `Total players remaining: **${remainingCount}** / ${totalCount}\n\n`;
+      output += `Total players remaining: **${remainingCount}** / ${allPlayers.length}\n\n`;
     }
     
     allPlayers.forEach(player => {
@@ -761,6 +811,6 @@ export class DistributionManager {
       output += `• ${playerDisplay} - Please move ➜ **${player.targetClan}**${checkmark}\n`;
     });
 
-    return output;
+    return { text: output, players: allPlayers };
   }
 }
