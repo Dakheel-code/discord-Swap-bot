@@ -509,15 +509,6 @@ export class DistributionManager {
           const discordMention = player.DiscordName || '';
           const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
           
-          // Build display name: mention `originalName` (name in code block)
-          let name;
-          if (discordMention && originalName) {
-            name = `${discordMention} \`${originalName}\``;
-          } else {
-            const displayName = discordMention || originalName || this.getPlayerName(player);
-            name = `\`${displayName}\``;
-          }
-          
           const identifier = this.getPlayerIdentifier(player);
           
           // Check if marked as done by identifier OR by DiscordName mention OR by Discord-ID
@@ -541,14 +532,24 @@ export class DistributionManager {
           
           const value = this.sortColumn ? player[this.sortColumn] : '';
           
-          output += `• ${name}`;
+          // Format: › @mention • Name • value
+          let line = '› ';
+          if (discordMention) {
+            line += discordMention;
+            if (originalName) {
+              line += ` • ${originalName}`;
+            }
+          } else {
+            line += originalName || this.getPlayerName(player);
+          }
+          
           if (value) {
-            output += ` - ${value}`;
+            line += ` • ${value}`;
           }
           if (isDone) {
-            output += ' ✅';
+            line += ' ✅';
           }
-          output += '\n';
+          output += line + '\n';
         });
         output += '\n';
       }
@@ -568,20 +569,11 @@ export class DistributionManager {
         }
       });
 
-      output += `## WILDCARDS (${this.groups.WILDCARDS.length})\n`;
+      output += `# ⚡ WILDCARDS (${this.groups.WILDCARDS.length})\n`;
       this.groups.WILDCARDS.forEach((player, index) => {
         // Get Discord mention and original name
         const discordMention = player.DiscordName || '';
         const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
-        
-        // Build display name: mention `originalName` (name in code block)
-        let name;
-        if (discordMention && originalName) {
-          name = `${discordMention} \`${originalName}\``;
-        } else {
-          const displayName = discordMention || originalName || this.getPlayerName(player);
-          name = `\`${displayName}\``;
-        }
         
         const identifier = this.getPlayerIdentifier(player);
         
@@ -606,20 +598,29 @@ export class DistributionManager {
         
         const info = this.wildcardInfo.get(identifier);
         
-        let suffix = '';
+        // Build line: - @mention Name ➜ **CLAN** or ⏸ **Stay in CLAN**
+        let line = '- ';
+        if (discordMention) {
+          line += discordMention;
+          if (originalName) {
+            line += ` ${originalName}`;
+          }
+        } else {
+          line += originalName || this.getPlayerName(player);
+        }
+        
         if (info) {
           if (info.type === 'excluded') {
-            suffix = ` - Stay in **${info.target}**`;
+            line += ` ⏸ **Stay in ${info.target}**`;
           } else if (info.type === 'manual') {
-            suffix = ` - Move to **${info.target}**`;
+            line += ` ➜ **${info.target}**`;
           }
         }
         
-        output += `• ${name}${suffix}`;
         if (isDone) {
-          output += ' ✅';
+          line += ' ✅';
         }
-        output += '\n';
+        output += line + '\n';
       });
       output += '\n';
     }
