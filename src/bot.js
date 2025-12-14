@@ -387,10 +387,6 @@ export class DiscordBot {
           await this.handleHelp(interaction);
           break;
 
-        case 'swapsleft':
-          await this.handleSwapsLeft(interaction);
-          break;
-
         case 'admin':
           await this.handleAdmin(interaction);
           break;
