@@ -2903,21 +2903,37 @@ export class DiscordBot {
    * Create interactive buttons for distribution message
    */
   createDistributionButtons() {
-    // Row 1: Main actions
+    // Row 1: View & Data actions (Blue theme)
     const row1 = new ActionRowBuilder()
       .addComponents(
+        new ButtonBuilder()
+          .setCustomId('show_distribution')
+          .setLabel('Show')
+          .setEmoji('👁️')
+          .setStyle(ButtonStyle.Primary),
+        
         new ButtonBuilder()
           .setCustomId('show_swaps_left')
           .setLabel('Swaps Left')
           .setEmoji('📋')
-          .setStyle(ButtonStyle.Secondary),
+          .setStyle(ButtonStyle.Primary),
         
         new ButtonBuilder()
           .setCustomId('refresh_data')
           .setLabel('Refresh')
           .setEmoji('🔄')
-          .setStyle(ButtonStyle.Secondary),
+          .setStyle(ButtonStyle.Primary),
         
+        new ButtonBuilder()
+          .setCustomId('open_schedule')
+          .setLabel('Schedule')
+          .setEmoji('📅')
+          .setStyle(ButtonStyle.Primary)
+      );
+    
+    // Row 2: Player actions (Green & Gray theme)
+    const row2 = new ActionRowBuilder()
+      .addComponents(
         new ButtonBuilder()
           .setCustomId('mark_done')
           .setLabel('Mark Done')
@@ -2928,44 +2944,32 @@ export class DiscordBot {
           .setCustomId('move_player')
           .setLabel('Move')
           .setEmoji('🔀')
-          .setStyle(ButtonStyle.Primary),
-        
-        new ButtonBuilder()
-          .setCustomId('open_schedule')
-          .setLabel('Schedule')
-          .setEmoji('📅')
-          .setStyle(ButtonStyle.Primary)
-      );
-    
-    // Row 2: Additional actions
-    const row2 = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('show_distribution')
-          .setLabel('Show')
-          .setEmoji('👁️')
-          .setStyle(ButtonStyle.Secondary),
+          .setStyle(ButtonStyle.Success),
         
         new ButtonBuilder()
           .setCustomId('add_player')
-          .setLabel('Add a player')
+          .setLabel('Add Player')
           .setEmoji('➕')
-          .setStyle(ButtonStyle.Success),
+          .setStyle(ButtonStyle.Secondary)
+      );
+    
+    // Row 3: Settings (Gray & Red theme)
+    const row3 = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('show_help')
+          .setLabel('Help')
+          .setEmoji('❓')
+          .setStyle(ButtonStyle.Secondary),
         
         new ButtonBuilder()
           .setCustomId('reset_options')
           .setLabel('Reset')
           .setEmoji('🗑️')
-          .setStyle(ButtonStyle.Danger),
-        
-        new ButtonBuilder()
-          .setCustomId('show_help')
-          .setLabel('Help')
-          .setEmoji('❓')
-          .setStyle(ButtonStyle.Secondary)
+          .setStyle(ButtonStyle.Danger)
       );
     
-    return [row1, row2];
+    return [row1, row2, row3];
   }
 
   /**
