@@ -1828,11 +1828,14 @@ export class DiscordBot {
   }
 
   /**
-   * Handle /done command - Show dropdown menus to mark players as done
+   * Handle /done command - Show Admin Controls buttons
    */
   async handleDone(interaction) {
-    // Reuse the same logic as handleMarkDoneButton
-    await this.handleMarkDoneButton(interaction);
+    // Show Admin Controls with buttons
+    await interaction.editReply({
+      content: '**Admin Controls** (Only you can see this)',
+      components: [this.createDistributionButtons()]
+    });
   }
 
   /**
