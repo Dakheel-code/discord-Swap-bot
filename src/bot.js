@@ -2950,13 +2950,13 @@ export class DiscordBot {
           .setCustomId('move_player')
           .setLabel('Move')
           .setEmoji('🔀')
-          .setStyle(ButtonStyle.Success),
+          .setStyle(ButtonStyle.Primary),
         
         new ButtonBuilder()
           .setCustomId('add_player')
           .setLabel('Add Player')
           .setEmoji('➕')
-          .setStyle(ButtonStyle.Secondary)
+          .setStyle(ButtonStyle.Success)
       );
     
     // Row 3: Settings (Gray & Red theme)
