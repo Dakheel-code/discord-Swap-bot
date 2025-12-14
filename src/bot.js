@@ -786,9 +786,23 @@ export class DiscordBot {
     }
     
     try {
+      // Get player's current clan
+      const player = this.playersData[playerIndex];
+      const currentClan = player?.Clan || player?.clan || '';
+      
+      // If moving to same clan, use HOLD instead
+      let actionToWrite = targetClan;
+      let actionMessage = `moved to **${targetClan}**`;
+      
+      if (currentClan.toUpperCase() === targetClan.toUpperCase()) {
+        actionToWrite = 'Hold';
+        actionMessage = `set to **HOLD** (staying in ${targetClan})`;
+        console.log(`📌 Player is already in ${currentClan}, setting to HOLD`);
+      }
+      
       // Write action to Google Sheet
-      console.log(`📝 Writing action to Google Sheet: discordId="${discordId}", action="${targetClan}"`);
-      await writePlayerAction(discordId, targetClan);
+      console.log(`📝 Writing action to Google Sheet: discordId="${discordId}", action="${actionToWrite}"`);
+      await writePlayerAction(discordId, actionToWrite);
       console.log(`✅ Action written successfully`);
       
       // Refresh and redistribute
@@ -809,8 +823,8 @@ export class DiscordBot {
       
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
-        .setTitle('✅ Player Moved')
-        .setDescription(`**${playerName}** has been moved to **${targetClan}**`)
+        .setTitle(actionToWrite === 'Hold' ? '✅ Player Set to HOLD' : '✅ Player Moved')
+        .setDescription(`**${playerName}** ${actionMessage}`)
         .setTimestamp();
       
       await interaction.editReply({ embeds: [embed], components: [] });
@@ -833,12 +847,12 @@ export class DiscordBot {
 
     const ingameIdInput = new TextInputBuilder()
       .setCustomId('ingame_id')
-      .setLabel('In-game Player Name/ID')
-      .setPlaceholder('Enter the player name as it appears in-game')
+      .setLabel('In-game ID (Numbers only)')
+      .setPlaceholder('Enter the player ID (e.g., 5015942)')
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setMinLength(1)
-      .setMaxLength(100);
+      .setMaxLength(20);
 
     const discordIdInput = new TextInputBuilder()
       .setCustomId('discord_id')
@@ -1031,6 +1045,12 @@ export class DiscordBot {
         const ingameId = interaction.fields.getTextInputValue('ingame_id').trim();
         const discordId = interaction.fields.getTextInputValue('discord_id').trim();
         
+        // Validate In-game ID (should be numeric)
+        if (!/^\d+$/.test(ingameId)) {
+          await interaction.editReply('❌ Invalid In-game ID. It should contain numbers only (e.g., 5015942)');
+          return;
+        }
+        
         // Validate Discord ID (should be numeric)
         if (!/^\d{17,20}$/.test(discordId)) {
           await interaction.editReply('❌ Invalid Discord ID. It should be a 17-20 digit number.\n\nTo get a Discord ID:\n1. Enable Developer Mode in Discord Settings\n2. Right-click on the user\n3. Click "Copy User ID"');
@@ -1055,7 +1075,7 @@ export class DiscordBot {
               .setTitle('✅ Player Added')
               .setDescription(`Successfully mapped player to Discord account`)
               .addFields(
-                { name: '🎮 In-game Name', value: ingameId, inline: true },
+                { name: '🎮 In-game ID', value: ingameId, inline: true },
                 { name: '👤 Discord User', value: `<@${discordId}>`, inline: true }
               )
               .setTimestamp();
