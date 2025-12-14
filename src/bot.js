@@ -470,11 +470,6 @@ export class DiscordBot {
         return;
       }
       
-      // Handle quick date buttons (Today/Tomorrow)
-      if (customId === 'schedule_today' || customId === 'schedule_tomorrow') {
-        await this.handleQuickDateButton(interaction, customId);
-        return;
-      }
       
       await interaction.deferReply({ ephemeral: true });
       
@@ -592,7 +587,7 @@ export class DiscordBot {
   }
 
   /**
-   * Handle Schedule Set Time button - opens Modal
+   * Handle Schedule Set Time button - opens Modal with pre-filled defaults
    */
   async handleScheduleSetTimeButton(interaction) {
     // Check if channel is selected
@@ -606,7 +601,18 @@ export class DiscordBot {
       return;
     }
 
-    // Create Modal for date/time input
+    // Calculate tomorrow's date
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    
+    const year = tomorrow.getUTCFullYear();
+    const month = String(tomorrow.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(tomorrow.getUTCDate()).padStart(2, '0');
+    const defaultDate = `${year}-${month}-${day}`;
+    const defaultTime = '03:30';
+
+    // Create Modal for date/time input with defaults
     const modal = new ModalBuilder()
       .setCustomId('schedule_datetime_modal')
       .setTitle('📅 Set Schedule Time');
@@ -614,7 +620,7 @@ export class DiscordBot {
     const dateInput = new TextInputBuilder()
       .setCustomId('schedule_date')
       .setLabel('Date (YYYY-MM-DD)')
-      .setPlaceholder('2024-12-25')
+      .setValue(defaultDate)
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setMinLength(10)
@@ -623,70 +629,7 @@ export class DiscordBot {
     const timeInput = new TextInputBuilder()
       .setCustomId('schedule_time')
       .setLabel('Time in UTC (HH:MM)')
-      .setPlaceholder('14:30')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
-      .setMinLength(5)
-      .setMaxLength(5);
-
-    const dateRow = new ActionRowBuilder().addComponents(dateInput);
-    const timeRow = new ActionRowBuilder().addComponents(timeInput);
-
-    modal.addComponents(dateRow, timeRow);
-
-    await interaction.showModal(modal);
-  }
-
-  /**
-   * Handle quick date buttons (Today/Tomorrow) - opens Modal with pre-filled date
-   */
-  async handleQuickDateButton(interaction, buttonId) {
-    // Check if channel is selected
-    const channelId = this.pendingScheduleChannel.get(interaction.user.id);
-    
-    if (!channelId) {
-      await interaction.reply({ 
-        content: '❌ Please select a channel first!', 
-        ephemeral: true 
-      });
-      return;
-    }
-
-    // Calculate date based on button
-    const now = new Date();
-    let targetDate;
-    
-    if (buttonId === 'schedule_today') {
-      targetDate = now;
-    } else {
-      // Tomorrow
-      targetDate = new Date(now);
-      targetDate.setUTCDate(targetDate.getUTCDate() + 1);
-    }
-    
-    const year = targetDate.getUTCFullYear();
-    const month = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(targetDate.getUTCDate()).padStart(2, '0');
-    const prefilledDate = `${year}-${month}-${day}`;
-
-    // Create Modal with pre-filled date
-    const modal = new ModalBuilder()
-      .setCustomId('schedule_datetime_modal')
-      .setTitle(buttonId === 'schedule_today' ? '📅 Schedule for Today' : '📅 Schedule for Tomorrow');
-
-    const dateInput = new TextInputBuilder()
-      .setCustomId('schedule_date')
-      .setLabel('Date (YYYY-MM-DD)')
-      .setValue(prefilledDate)
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
-      .setMinLength(10)
-      .setMaxLength(10);
-
-    const timeInput = new TextInputBuilder()
-      .setCustomId('schedule_time')
-      .setLabel('Time in UTC (HH:MM)')
-      .setPlaceholder('14:30')
+      .setValue(defaultTime)
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setMinLength(5)
@@ -1779,26 +1722,13 @@ export class DiscordBot {
 
     const channelRow = new ActionRowBuilder().addComponents(channelSelect);
 
-    // Quick date buttons
-    const quickDateRow = new ActionRowBuilder()
+    // Set Time button
+    const buttonRow = new ActionRowBuilder()
       .addComponents(
-        new ButtonBuilder()
-          .setCustomId('schedule_today')
-          .setLabel('📅 Today')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('schedule_tomorrow')
-          .setLabel('📅 Tomorrow')
-          .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId('schedule_set_time')
-          .setLabel('📝 Custom Date')
-          .setStyle(ButtonStyle.Primary)
-      );
-
-    // Cancel button
-    const cancelRow = new ActionRowBuilder()
-      .addComponents(
+          .setLabel('📅 Set Date & Time')
+          .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('schedule_cancel')
           .setLabel('Cancel')
@@ -1808,16 +1738,16 @@ export class DiscordBot {
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle('📅 Create New Schedule')
-      .setDescription('**Step 1:** Select a channel\n**Step 2:** Choose a quick date or enter custom date/time')
+      .setDescription('**Step 1:** Select a channel\n**Step 2:** Click "Set Date & Time"')
       .addFields(
         { name: '📺 Channel', value: '_Not selected_', inline: true },
         { name: '⏰ Date & Time', value: '_Not set_', inline: true }
       )
-      .setFooter({ text: 'All times are in UTC' });
+      .setFooter({ text: 'All times are in UTC • Default: Tomorrow 03:30' });
 
     await interaction.editReply({
       embeds: [embed],
-      components: [channelRow, quickDateRow, cancelRow]
+      components: [channelRow, buttonRow]
     });
   }
 
