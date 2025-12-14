@@ -525,6 +525,10 @@ export class DiscordBot {
       
       if (customId === 'select_players_done' || customId === 'select_rgr_done' || customId === 'select_otl_done' || customId === 'select_rnd_done' || customId === 'select_wildcards_done') {
         await this.handleSelectPlayersDone(interaction);
+      } else if (customId.startsWith('move_player_select_')) {
+        await this.handleMovePlayerSelect(interaction);
+      } else if (customId === 'move_clan_select') {
+        await this.handleMoveClanSelect(interaction);
       } else {
         await interaction.editReply('❌ Unknown select menu');
       }
@@ -647,38 +651,167 @@ export class DiscordBot {
   }
 
   /**
-   * Handle Move Player button - opens Modal for player search
+   * Handle Move Player button - shows player selection dropdowns
    */
   async handleMovePlayerButton(interaction) {
-    // Create Modal for player search
-    const modal = new ModalBuilder()
-      .setCustomId('move_player_modal')
-      .setTitle('🔀 Move Player');
+    await interaction.deferReply({ ephemeral: true });
+    
+    // Get all players
+    if (!this.playersData || this.playersData.length === 0) {
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+    }
+    
+    if (this.playersData.length === 0) {
+      await interaction.editReply('❌ No players found. Please run /swap first.');
+      return;
+    }
+    
+    // Create player options (max 25 per select menu, max 5 select menus per message)
+    const players = this.playersData.map((p, index) => {
+      const name = p.Name || p.Player || p.USERNAME || 'Unknown';
+      const discordId = p['Discord-ID'] || '';
+      const trophies = p.Trophies || '';
+      // Truncate name to fit Discord's 100 char limit for label
+      const displayName = name.length > 50 ? name.substring(0, 47) + '...' : name;
+      return {
+        label: displayName,
+        description: trophies ? `🏆 ${trophies}` : undefined,
+        value: `player_${index}_${discordId || 'no_id'}`
+      };
+    });
+    
+    // Split into chunks of 25 (Discord limit)
+    const chunks = [];
+    for (let i = 0; i < players.length; i += 25) {
+      chunks.push(players.slice(i, i + 25));
+    }
+    
+    // Create select menus (max 5 per message due to Discord limit)
+    const components = [];
+    const maxMenus = Math.min(chunks.length, 5);
+    
+    for (let i = 0; i < maxMenus; i++) {
+      const startNum = i * 25 + 1;
+      const endNum = Math.min((i + 1) * 25, players.length);
+      
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId(`move_player_select_${i}`)
+        .setPlaceholder(`Players ${startNum}-${endNum}`)
+        .addOptions(chunks[i]);
+      
+      components.push(new ActionRowBuilder().addComponents(selectMenu));
+    }
+    
+    // If more than 125 players, add a note
+    let description = '**Step 1:** Select a player from the lists below\n**Step 2:** Choose the target clan';
+    if (players.length > 125) {
+      description += `\n\n⚠️ Showing first 125 of ${players.length} players`;
+    }
+    
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('🔀 Move Player')
+      .setDescription(description)
+      .setFooter({ text: 'Select a player to move them to a different clan' });
+    
+    await interaction.editReply({ embeds: [embed], components });
+  }
 
-    const playerInput = new TextInputBuilder()
-      .setCustomId('player_name')
-      .setLabel('Player Name (or part of it)')
-      .setPlaceholder('Enter player name to search...')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
-      .setMinLength(2)
-      .setMaxLength(50);
+  /**
+   * Handle player selection from Move dropdown
+   */
+  async handleMovePlayerSelect(interaction) {
+    const selectedValue = interaction.values[0];
+    // Parse: player_INDEX_DISCORDID
+    const parts = selectedValue.split('_');
+    const playerIndex = parseInt(parts[1]);
+    const discordId = parts.slice(2).join('_'); // In case ID has underscores
+    
+    if (!this.playersData || playerIndex >= this.playersData.length) {
+      await interaction.editReply('❌ Player not found. Please try again.');
+      return;
+    }
+    
+    const player = this.playersData[playerIndex];
+    const playerName = player.Name || player.Player || player.USERNAME || 'Unknown';
+    
+    // Store selected player for this user
+    this.pendingMovePlayer = this.pendingMovePlayer || new Map();
+    this.pendingMovePlayer.set(interaction.user.id, {
+      index: playerIndex,
+      discordId: discordId !== 'no_id' ? discordId : null,
+      name: playerName
+    });
+    
+    // Show clan selection
+    const clanSelect = new StringSelectMenuBuilder()
+      .setCustomId('move_clan_select')
+      .setPlaceholder('Select target clan')
+      .addOptions([
+        { label: 'RGR', description: 'Move to RGR clan', value: 'RGR', emoji: '🏆' },
+        { label: 'OTL', description: 'Move to OTL clan', value: 'OTL', emoji: '🏆' },
+        { label: 'RND', description: 'Move to RND clan', value: 'RND', emoji: '🏆' }
+      ]);
+    
+    const clanRow = new ActionRowBuilder().addComponents(clanSelect);
+    
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('🔀 Move Player')
+      .setDescription(`**Selected:** ${playerName}\n\n**Step 2:** Choose the target clan`)
+      .setFooter({ text: 'Select a clan to complete the move' });
+    
+    await interaction.editReply({ embeds: [embed], components: [clanRow] });
+  }
 
-    const clanInput = new TextInputBuilder()
-      .setCustomId('target_clan')
-      .setLabel('Target Clan (RGR, OTL, or RND)')
-      .setPlaceholder('RGR')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
-      .setMinLength(3)
-      .setMaxLength(3);
-
-    const playerRow = new ActionRowBuilder().addComponents(playerInput);
-    const clanRow = new ActionRowBuilder().addComponents(clanInput);
-
-    modal.addComponents(playerRow, clanRow);
-
-    await interaction.showModal(modal);
+  /**
+   * Handle clan selection for Move
+   */
+  async handleMoveClanSelect(interaction) {
+    const targetClan = interaction.values[0];
+    
+    // Get stored player
+    if (!this.pendingMovePlayer || !this.pendingMovePlayer.has(interaction.user.id)) {
+      await interaction.editReply('❌ No player selected. Please start over.');
+      return;
+    }
+    
+    const playerData = this.pendingMovePlayer.get(interaction.user.id);
+    const { discordId, name: playerName } = playerData;
+    
+    if (!discordId) {
+      await interaction.editReply(`❌ Player "${playerName}" doesn't have a Discord ID mapped. Use /map first.`);
+      this.pendingMovePlayer.delete(interaction.user.id);
+      return;
+    }
+    
+    // Write action to Google Sheet
+    const success = await writePlayerAction(discordId, targetClan);
+    
+    if (success) {
+      // Refresh and redistribute
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+      this.distributionManager.distribute(this.playersData);
+      
+      // Update messages if they exist
+      if (this.lastDistributionMessages.length > 0) {
+        const formattedText = this.distributionManager.getFormattedDistribution();
+        await this.updateDistributionMessages(formattedText);
+      }
+      
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff00)
+        .setTitle('✅ Player Moved')
+        .setDescription(`**${playerName}** has been moved to **${targetClan}**`)
+        .setTimestamp();
+      
+      await interaction.editReply({ embeds: [embed], components: [] });
+    } else {
+      await interaction.editReply(`❌ Failed to move player. Make sure they are mapped with /map.`);
+    }
+    
+    // Clean up
+    this.pendingMovePlayer.delete(interaction.user.id);
   }
 
   /**
@@ -748,85 +881,6 @@ export class DiscordBot {
         }
       }
       
-      // Handle Move Player Modal
-      if (customId === 'move_player_modal') {
-        await interaction.deferReply({ ephemeral: true });
-        
-        const playerName = interaction.fields.getTextInputValue('player_name').trim();
-        const targetClan = interaction.fields.getTextInputValue('target_clan').trim().toUpperCase();
-        
-        // Validate clan
-        if (!['RGR', 'OTL', 'RND'].includes(targetClan)) {
-          await interaction.editReply('❌ Invalid clan! Please use RGR, OTL, or RND.');
-          return;
-        }
-        
-        // Search for player in playersData
-        if (!this.playersData || this.playersData.length === 0) {
-          this.playersData = await fetchPlayersDataWithDiscordNames();
-        }
-        
-        // Find matching players (case-insensitive partial match)
-        const searchLower = playerName.toLowerCase();
-        const matchingPlayers = this.playersData.filter(p => {
-          const name = p.Name || p.Player || p.USERNAME || '';
-          const discordName = p.DiscordName || '';
-          return name.toLowerCase().includes(searchLower) || 
-                 discordName.toLowerCase().includes(searchLower);
-        });
-        
-        if (matchingPlayers.length === 0) {
-          await interaction.editReply(`❌ No player found matching "${playerName}"`);
-          return;
-        }
-        
-        if (matchingPlayers.length > 1) {
-          // Multiple matches - show list
-          const playerList = matchingPlayers.slice(0, 10).map(p => {
-            const name = p.Name || p.Player || p.USERNAME || 'Unknown';
-            const discordId = p['Discord-ID'] || '';
-            return `• ${name}${discordId ? ` (<@${discordId}>)` : ''}`;
-          }).join('\n');
-          
-          await interaction.editReply(`⚠️ Multiple players found matching "${playerName}":\n\n${playerList}\n\nPlease be more specific.`);
-          return;
-        }
-        
-        // Single match - proceed with move
-        const player = matchingPlayers[0];
-        const discordId = player['Discord-ID'];
-        const playerDisplayName = player.Name || player.Player || player.USERNAME || 'Unknown';
-        
-        if (!discordId) {
-          await interaction.editReply(`❌ Player "${playerDisplayName}" doesn't have a Discord ID mapped. Use /map first.`);
-          return;
-        }
-        
-        // Write action to Google Sheet
-        const success = await writePlayerAction(discordId, targetClan);
-        
-        if (success) {
-          // Refresh and redistribute
-          this.playersData = await fetchPlayersDataWithDiscordNames();
-          this.distributionManager.distribute(this.playersData);
-          
-          // Update messages if they exist
-          if (this.lastDistributionMessages.length > 0) {
-            const formattedText = this.distributionManager.getFormattedDistribution();
-            await this.updateDistributionMessages(formattedText);
-          }
-          
-          const embed = new EmbedBuilder()
-            .setColor(0x00ff00)
-            .setTitle('✅ Player Moved')
-            .setDescription(`**${playerDisplayName}** has been moved to **${targetClan}**`)
-            .setTimestamp();
-          
-          await interaction.editReply({ embeds: [embed] });
-        } else {
-          await interaction.editReply(`❌ Failed to move player. Make sure they are mapped with /map.`);
-        }
-      }
     } catch (error) {
       console.error(`❌ Error handling modal ${customId}:`, error);
       await interaction.editReply(`❌ Error: ${error.message}`);
