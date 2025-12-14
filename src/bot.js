@@ -26,6 +26,7 @@ export class DiscordBot {
     this.scheduleFilePath = './schedule.json'; // File to store schedule data
     this.lastChannelId = null; // Store channel ID for message retrieval
     this.pendingScheduleChannel = new Map(); // Store pending channel selection for schedule (userId -> channelId)
+    this.lastSelectedPlayers = new Map(); // Store last selected players for mark done (userId -> [identifiers])
   }
 
   /**
@@ -1595,15 +1596,50 @@ export class DiscordBot {
    */
   async handleSelectPlayersDone(interaction) {
     const selectedIdentifiers = interaction.values;
+    const userId = interaction.user.id;
     
     console.log(`🔍 Selected identifiers: ${selectedIdentifiers.join(', ')}`);
     console.log(`📋 Current completed players: ${Array.from(this.distributionManager.completedPlayers).join(', ')}`);
     
-    // Check if any players were selected
+    // Get previously selected players for this user
+    const previouslySelected = this.lastSelectedPlayers.get(userId) || [];
+    
+    // Check if selection was cleared (user deselected all)
     if (!selectedIdentifiers || selectedIdentifiers.length === 0) {
-      await interaction.editReply('ℹ️ Selection cleared. Select players from the dropdown to mark/unmark them.');
+      // If there were previously selected players, unmark them
+      if (previouslySelected.length > 0) {
+        let unmarkedCount = 0;
+        previouslySelected.forEach(identifier => {
+          if (this.distributionManager.completedPlayers.has(identifier)) {
+            this.distributionManager.completedPlayers.delete(identifier);
+            console.log(`❌ Unmarking (cleared): ${identifier}`);
+            unmarkedCount++;
+          }
+          // Also try by DiscordName
+          const player = this.distributionManager.findPlayer(identifier);
+          if (player && player.DiscordName && this.distributionManager.completedPlayers.has(player.DiscordName)) {
+            this.distributionManager.completedPlayers.delete(player.DiscordName);
+          }
+        });
+        
+        // Clear the stored selection
+        this.lastSelectedPlayers.delete(userId);
+        
+        if (unmarkedCount > 0) {
+          // Update distribution messages
+          const formattedText = this.distributionManager.getFormattedDistribution();
+          await this.updateDistributionMessages(formattedText);
+          await interaction.editReply(`❌ Unmarked ${unmarkedCount} player(s)`);
+          return;
+        }
+      }
+      
+      await interaction.editReply('ℹ️ No players selected. Select players from the dropdown to mark/unmark them.');
       return;
     }
+    
+    // Store current selection for next time
+    this.lastSelectedPlayers.set(userId, [...selectedIdentifiers]);
     
     // Toggle players: if already marked as done, unmark them; otherwise mark them
     let markedCount = 0;
