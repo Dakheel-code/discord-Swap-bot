@@ -1387,9 +1387,9 @@ export class DiscordBot {
     // Get the swaps left text
     const swapsLeftText = this.distributionManager.getSwapsLeft();
 
-    // Send the list
-    await interaction.editReply('📋 **Swaps Left:**');
-    await interaction.followUp({ content: swapsLeftText, ephemeral: true });
+    // Send the list publicly (not ephemeral)
+    await interaction.editReply('📋 Sending Swaps Left to channel...');
+    await interaction.channel.send(swapsLeftText);
   }
 
   /**
