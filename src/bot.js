@@ -396,23 +396,7 @@ export class DiscordBot {
           break;
 
         case 'schedule':
-          const subcommand = interaction.options.getSubcommand();
-          switch (subcommand) {
-            case 'create':
-              await this.handleSchedule(interaction);
-              break;
-            case 'view':
-              await this.handleViewSchedule(interaction);
-              break;
-            case 'edit':
-              await this.handleEditSchedule(interaction);
-              break;
-            case 'delete':
-              await this.handleDeleteSchedule(interaction);
-              break;
-            default:
-              await interaction.editReply('❌ Unknown schedule subcommand');
-          }
+          await this.handleScheduleMain(interaction);
           break;
 
         case 'help':
@@ -448,6 +432,44 @@ export class DiscordBot {
     const customId = interaction.customId;
     
     try {
+      // Don't defer for buttons that open modals
+      if (customId === 'schedule_set_time' || customId === 'schedule_edit') {
+        await this.handleScheduleSetTimeButton(interaction);
+        return;
+      }
+      
+      // Don't defer for schedule cancel - it updates the original message
+      if (customId === 'schedule_cancel') {
+        await interaction.update({ content: '❌ Schedule cancelled', embeds: [], components: [] });
+        return;
+      }
+      
+      // Handle schedule delete
+      if (customId === 'schedule_delete') {
+        this.scheduledData = null;
+        this.deleteSchedule();
+        await interaction.update({ 
+          content: '✅ Schedule deleted successfully', 
+          embeds: [], 
+          components: [] 
+        });
+        return;
+      }
+      
+      // Handle schedule preview
+      if (customId === 'schedule_view_preview') {
+        await interaction.deferReply({ ephemeral: true });
+        const formattedText = this.distributionManager.getFormattedDistribution();
+        if (formattedText && formattedText.length > 50) {
+          const maxLength = 2000;
+          const preview = formattedText.length > maxLength ? formattedText.substring(0, maxLength - 50) + '\n\n... (truncated)' : formattedText;
+          await interaction.editReply({ content: '**Preview:**\n\n' + preview });
+        } else {
+          await interaction.editReply('⚠️ No distribution data. Run /swap first.');
+        }
+        return;
+      }
+      
       await interaction.deferReply({ ephemeral: true });
       
       switch (customId) {
@@ -477,14 +499,6 @@ export class DiscordBot {
         
         case 'mark_rnd_done':
           await this.handleMarkClanDone(interaction, 'RND');
-          break;
-        
-        case 'schedule_set_time':
-          await this.handleScheduleSetTimeButton(interaction);
-          return; // Don't use editReply, modal handles response
-        
-        case 'schedule_cancel':
-          await interaction.editReply({ content: '❌ Schedule creation cancelled', embeds: [], components: [] });
           break;
         
         default:
@@ -1620,9 +1634,74 @@ export class DiscordBot {
   }
 
   /**
-   * Handle /schedule create command - Show interactive UI
+   * Handle /schedule command - Show unified schedule management UI
    */
-  async handleSchedule(interaction) {
+  async handleScheduleMain(interaction) {
+    // Check if there's an existing schedule
+    const hasSchedule = this.scheduledData !== null;
+    
+    if (hasSchedule) {
+      // Show existing schedule with edit/delete options
+      const [datePart, timePart] = this.scheduledData.datetime.split(' ');
+      const [year, month, day] = datePart.split('-').map(Number);
+      const [hour, minute] = timePart.split(':').map(Number);
+      const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+      const now = new Date();
+      const diff = scheduledDate.getTime() - now.getTime();
+      
+      let timeStatus, color;
+      if (diff > 0) {
+        const hoursUntil = Math.floor(diff / 1000 / 60 / 60);
+        const minsUntil = Math.floor((diff / 1000 / 60) % 60);
+        timeStatus = `${hoursUntil}h ${minsUntil}m remaining`;
+        color = 0x00ff00;
+      } else {
+        const hoursAgo = Math.floor(Math.abs(diff) / 1000 / 60 / 60);
+        const minsAgo = Math.floor((Math.abs(diff) / 1000 / 60) % 60);
+        timeStatus = `${hoursAgo}h ${minsAgo}m ago (pending execution)`;
+        color = 0xffa500;
+      }
+      
+      const channel = await this.client.channels.fetch(this.scheduledData.channelId).catch(() => null);
+      
+      const embed = new EmbedBuilder()
+        .setColor(color)
+        .setTitle('📅 Schedule Management')
+        .setDescription('You have an active schedule:')
+        .addFields(
+          { name: '📺 Channel', value: channel ? `${channel}` : 'Unknown', inline: true },
+          { name: '⏰ Date & Time (UTC)', value: this.scheduledData.datetime, inline: true },
+          { name: '⏳ Status', value: timeStatus, inline: false }
+        )
+        .setFooter({ text: 'Use the buttons below to manage your schedule' });
+
+      const buttonRow = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId('schedule_edit')
+            .setLabel('✏️ Edit')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('schedule_delete')
+            .setLabel('🗑️ Delete')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId('schedule_view_preview')
+            .setLabel('👁️ Preview')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+      await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+    } else {
+      // No schedule - show create UI
+      await this.handleScheduleCreate(interaction);
+    }
+  }
+
+  /**
+   * Handle schedule creation UI
+   */
+  async handleScheduleCreate(interaction) {
     // Create channel select menu
     const channelSelect = new ChannelSelectMenuBuilder()
       .setCustomId('schedule_channel_select')
@@ -1646,7 +1725,7 @@ export class DiscordBot {
 
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
-      .setTitle('📅 Schedule Distribution')
+      .setTitle('📅 Create New Schedule')
       .setDescription('**Step 1:** Select a channel\n**Step 2:** Click "Set Date & Time" to enter the schedule time')
       .addFields(
         { name: '📺 Channel', value: '_Not selected_', inline: true },

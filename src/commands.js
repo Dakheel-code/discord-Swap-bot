@@ -76,39 +76,7 @@ export const commands = [
 
   new SlashCommandBuilder()
     .setName('schedule')
-    .setDescription('Manage scheduled distribution posting')
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('create')
-        .setDescription('Create a new scheduled distribution using interactive UI')
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('view')
-        .setDescription('View current scheduled distribution')
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('edit')
-        .setDescription('Edit scheduled distribution')
-        .addStringOption(option =>
-          option
-            .setName('datetime')
-            .setDescription('New date and time in UTC (YYYY-MM-DD HH:MM)')
-            .setRequired(false)
-        )
-        .addChannelOption(option =>
-          option
-            .setName('channel')
-            .setDescription('New channel to post in')
-            .setRequired(false)
-        )
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('delete')
-        .setDescription('Delete scheduled distribution')
-    ),
+    .setDescription('Manage scheduled distribution posting (interactive UI)'),
 
   new SlashCommandBuilder()
     .setName('help')
