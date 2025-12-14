@@ -2965,7 +2965,7 @@ export class DiscordBot {
           .setCustomId('show_swaps_left')
           .setLabel('Swaps Left')
           .setEmoji('📋')
-          .setStyle(ButtonStyle.Primary),
+          .setStyle(ButtonStyle.Secondary),
         
         new ButtonBuilder()
           .setCustomId('refresh_data')
