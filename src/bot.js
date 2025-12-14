@@ -371,14 +371,6 @@ export class DiscordBot {
           await this.handleDistribute(interaction);
           break;
 
-        case 'include':
-          await this.handleInclude(interaction);
-          break;
-
-        case 'show':
-          await this.handleShow(interaction);
-          break;
-
         case 'help':
           await this.handleHelp(interaction);
           break;
@@ -481,6 +473,12 @@ export class DiscordBot {
       // Handle Reset All button
       if (customId === 'reset_all') {
         await this.handleResetAll(interaction);
+        return;
+      }
+      
+      // Handle Show Distribution button
+      if (customId === 'show_distribution') {
+        await this.handleShowDistributionButton(interaction);
         return;
       }
       
@@ -1022,6 +1020,50 @@ export class DiscordBot {
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
       console.error('❌ Error resetting all:', error);
+      await interaction.editReply(`❌ Error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle Show Distribution button
+   */
+  async handleShowDistributionButton(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    // Check if distribution exists
+    if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
+      await interaction.editReply('⚠️ No swap found. Please run `/swap` first.');
+      return;
+    }
+    
+    try {
+      const formattedText = this.distributionManager.getFormattedDistribution();
+      
+      // Split into chunks if needed
+      const maxLength = 2000;
+      const chunks = [];
+      let currentChunk = '';
+      const lines = formattedText.split('\n');
+      
+      for (const line of lines) {
+        if ((currentChunk + line + '\n').length > maxLength) {
+          if (currentChunk) chunks.push(currentChunk);
+          currentChunk = line + '\n';
+        } else {
+          currentChunk += line + '\n';
+        }
+      }
+      if (currentChunk) chunks.push(currentChunk);
+      
+      // Send first chunk
+      await interaction.editReply({ content: chunks[0] });
+      
+      // Send remaining chunks
+      for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp({ content: chunks[i], ephemeral: true });
+      }
+    } catch (error) {
+      console.error('❌ Error showing distribution:', error);
       await interaction.editReply(`❌ Error: ${error.message}`);
     }
   }
@@ -2864,6 +2906,12 @@ export class DiscordBot {
     // Row 2: Additional actions
     const row2 = new ActionRowBuilder()
       .addComponents(
+        new ButtonBuilder()
+          .setCustomId('show_distribution')
+          .setLabel('Show')
+          .setEmoji('👁️')
+          .setStyle(ButtonStyle.Secondary),
+        
         new ButtonBuilder()
           .setCustomId('add_player')
           .setLabel('Add a player')

@@ -12,20 +12,6 @@ export const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName('include')
-    .setDescription('Include a previously excluded player')
-    .addUserOption(option =>
-      option
-        .setName('player')
-        .setDescription('Discord user to include')
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName('show')
-    .setDescription('Show current distribution'),
-
-  new SlashCommandBuilder()
     .setName('help')
     .setDescription('Show all available commands and usage instructions'),
 
