@@ -1242,9 +1242,7 @@ export class DiscordBot {
         ephemeral: true
       });
     } else {
-      // Create new messages without buttons
-      await this.sendLongMessage(interaction.channel, formattedText, true, false);
-      
+      // Don't send to channel - just show admin controls
       // Send admin controls as ephemeral followUp
       await interaction.followUp({
         content: '**Admin Controls** (Only you can see this)',
