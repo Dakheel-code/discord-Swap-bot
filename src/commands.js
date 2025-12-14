@@ -80,19 +80,7 @@ export const commands = [
     .addSubcommand(subcommand =>
       subcommand
         .setName('create')
-        .setDescription('Create a new scheduled distribution (UTC timezone)')
-        .addStringOption(option =>
-          option
-            .setName('datetime')
-            .setDescription('Date and time in UTC (YYYY-MM-DD HH:MM, e.g., 2024-12-25 14:30)')
-            .setRequired(true)
-        )
-        .addChannelOption(option =>
-          option
-            .setName('channel')
-            .setDescription('Channel to post in')
-            .setRequired(true)
-        )
+        .setDescription('Create a new scheduled distribution using interactive UI')
     )
     .addSubcommand(subcommand =>
       subcommand

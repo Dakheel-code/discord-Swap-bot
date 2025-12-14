@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType } from 'discord.js';
 import { config } from './config.js';
 import { commands } from './commands.js';
 import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions } from './sheets.js';
@@ -25,6 +25,7 @@ export class DiscordBot {
     this.messagesFilePath = './distribution_messages.json'; // File to store message IDs
     this.scheduleFilePath = './schedule.json'; // File to store schedule data
     this.lastChannelId = null; // Store channel ID for message retrieval
+    this.pendingScheduleChannel = new Map(); // Store pending channel selection for schedule (userId -> channelId)
   }
 
   /**
@@ -333,7 +334,7 @@ export class DiscordBot {
   }
 
   /**
-   * Handle interactions (slash commands, buttons, select menus)
+   * Handle interactions (slash commands, buttons, select menus, modals)
    */
   async onInteraction(interaction) {
     // Handle button interactions
@@ -341,9 +342,19 @@ export class DiscordBot {
       return await this.handleButtonInteraction(interaction);
     }
     
-    // Handle select menu interactions
+    // Handle select menu interactions (string)
     if (interaction.isStringSelectMenu()) {
       return await this.handleSelectMenuInteraction(interaction);
+    }
+    
+    // Handle channel select menu interactions
+    if (interaction.isChannelSelectMenu()) {
+      return await this.handleChannelSelectInteraction(interaction);
+    }
+    
+    // Handle modal submissions
+    if (interaction.isModalSubmit()) {
+      return await this.handleModalSubmit(interaction);
     }
     
     if (!interaction.isChatInputCommand()) return;
@@ -468,6 +479,14 @@ export class DiscordBot {
           await this.handleMarkClanDone(interaction, 'RND');
           break;
         
+        case 'schedule_set_time':
+          await this.handleScheduleSetTimeButton(interaction);
+          return; // Don't use editReply, modal handles response
+        
+        case 'schedule_cancel':
+          await interaction.editReply({ content: '❌ Schedule creation cancelled', embeds: [], components: [] });
+          break;
+        
         default:
           await interaction.editReply('❌ Unknown button');
       }
@@ -493,6 +512,191 @@ export class DiscordBot {
       }
     } catch (error) {
       console.error(`❌ Error handling select menu ${customId}:`, error);
+      await interaction.editReply(`❌ Error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle channel select menu interactions
+   */
+  async handleChannelSelectInteraction(interaction) {
+    const customId = interaction.customId;
+    
+    try {
+      if (customId === 'schedule_channel_select') {
+        const selectedChannel = interaction.channels.first();
+        
+        // Store the selected channel for this user
+        this.pendingScheduleChannel.set(interaction.user.id, selectedChannel.id);
+        
+        // Update the embed to show selected channel
+        const embed = new EmbedBuilder()
+          .setColor(0x5865F2)
+          .setTitle('📅 Schedule Distribution')
+          .setDescription('**Step 1:** ✅ Channel selected\n**Step 2:** Click "Set Date & Time" to enter the schedule time')
+          .addFields(
+            { name: '📺 Channel', value: `${selectedChannel}`, inline: true },
+            { name: '⏰ Date & Time', value: '_Not set_', inline: true }
+          )
+          .setFooter({ text: 'All times are in UTC' });
+
+        // Recreate components
+        const channelSelect = new ChannelSelectMenuBuilder()
+          .setCustomId('schedule_channel_select')
+          .setPlaceholder('Select a channel to post in')
+          .setChannelTypes(ChannelType.GuildText);
+
+        const channelRow = new ActionRowBuilder().addComponents(channelSelect);
+
+        const buttonRow = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId('schedule_set_time')
+              .setLabel('📅 Set Date & Time')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId('schedule_cancel')
+              .setLabel('Cancel')
+              .setStyle(ButtonStyle.Secondary)
+          );
+
+        await interaction.update({
+          embeds: [embed],
+          components: [channelRow, buttonRow]
+        });
+      }
+    } catch (error) {
+      console.error(`❌ Error handling channel select ${customId}:`, error);
+      await interaction.reply({ content: `❌ Error: ${error.message}`, ephemeral: true });
+    }
+  }
+
+  /**
+   * Handle Schedule Set Time button - opens Modal
+   */
+  async handleScheduleSetTimeButton(interaction) {
+    // Check if channel is selected
+    const channelId = this.pendingScheduleChannel.get(interaction.user.id);
+    
+    if (!channelId) {
+      await interaction.reply({ 
+        content: '❌ Please select a channel first!', 
+        ephemeral: true 
+      });
+      return;
+    }
+
+    // Create Modal for date/time input
+    const modal = new ModalBuilder()
+      .setCustomId('schedule_datetime_modal')
+      .setTitle('📅 Set Schedule Time');
+
+    const dateInput = new TextInputBuilder()
+      .setCustomId('schedule_date')
+      .setLabel('Date (YYYY-MM-DD)')
+      .setPlaceholder('2024-12-25')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMinLength(10)
+      .setMaxLength(10);
+
+    const timeInput = new TextInputBuilder()
+      .setCustomId('schedule_time')
+      .setLabel('Time in UTC (HH:MM)')
+      .setPlaceholder('14:30')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMinLength(5)
+      .setMaxLength(5);
+
+    const dateRow = new ActionRowBuilder().addComponents(dateInput);
+    const timeRow = new ActionRowBuilder().addComponents(timeInput);
+
+    modal.addComponents(dateRow, timeRow);
+
+    await interaction.showModal(modal);
+  }
+
+  /**
+   * Handle Modal submissions
+   */
+  async handleModalSubmit(interaction) {
+    const customId = interaction.customId;
+    
+    try {
+      if (customId === 'schedule_datetime_modal') {
+        await interaction.deferReply({ ephemeral: true });
+        
+        const date = interaction.fields.getTextInputValue('schedule_date');
+        const time = interaction.fields.getTextInputValue('schedule_time');
+        const datetime = `${date} ${time}`;
+        
+        // Get the stored channel
+        const channelId = this.pendingScheduleChannel.get(interaction.user.id);
+        
+        if (!channelId) {
+          await interaction.editReply('❌ Channel not found. Please start over with /schedule create');
+          return;
+        }
+        
+        // Process the schedule
+        const result = await this.processScheduleCreation(interaction, datetime, channelId);
+        
+        if (result.success) {
+          const channel = await this.client.channels.fetch(channelId);
+          
+          const embed = new EmbedBuilder()
+            .setColor(0x00ff00)
+            .setTitle('✅ Distribution Scheduled')
+            .setDescription(`The distribution will be posted in ${channel} at **${datetime} UTC**`)
+            .addFields(
+              { name: '⏰ Time Until Post', value: `${result.hoursUntil}h ${result.minsUntil}m`, inline: true },
+              { name: '📺 Channel', value: `${channel}`, inline: true }
+            )
+            .setFooter({ text: 'The schedule checker runs every 30 seconds to ensure delivery' })
+            .setTimestamp();
+
+          await interaction.editReply({ embeds: [embed] });
+          
+          // Clean up
+          this.pendingScheduleChannel.delete(interaction.user.id);
+          
+          // Send preview
+          const formattedText = this.distributionManager.getFormattedDistribution();
+          if (formattedText && formattedText.length > 50) {
+            const maxLength = 2000;
+            const chunks = [];
+            let currentChunk = '';
+            const lines = formattedText.split('\n');
+            
+            for (const line of lines) {
+              if ((currentChunk + line + '\n').length > maxLength) {
+                if (currentChunk) chunks.push(currentChunk);
+                currentChunk = line + '\n';
+              } else {
+                currentChunk += line + '\n';
+              }
+            }
+            if (currentChunk) chunks.push(currentChunk);
+            
+            await interaction.followUp({ 
+              content: '**Preview of the scheduled message:**\n\n' + chunks[0], 
+              ephemeral: true 
+            });
+            
+            for (let i = 1; i < chunks.length; i++) {
+              await interaction.followUp({ 
+                content: chunks[i], 
+                ephemeral: true 
+              });
+            }
+          }
+        } else {
+          await interaction.editReply(`❌ ${result.error}`);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error handling modal ${customId}:`, error);
       await interaction.editReply(`❌ Error: ${error.message}`);
     }
   }
@@ -1416,12 +1620,50 @@ export class DiscordBot {
   }
 
   /**
-   * Handle /schedule command
+   * Handle /schedule create command - Show interactive UI
    */
   async handleSchedule(interaction) {
-    const datetime = interaction.options.getString('datetime');
-    const channel = interaction.options.getChannel('channel');
+    // Create channel select menu
+    const channelSelect = new ChannelSelectMenuBuilder()
+      .setCustomId('schedule_channel_select')
+      .setPlaceholder('Select a channel to post in')
+      .setChannelTypes(ChannelType.GuildText);
 
+    const channelRow = new ActionRowBuilder().addComponents(channelSelect);
+
+    // Create Set Time button
+    const buttonRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('schedule_set_time')
+          .setLabel('📅 Set Date & Time')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('schedule_cancel')
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('📅 Schedule Distribution')
+      .setDescription('**Step 1:** Select a channel\n**Step 2:** Click "Set Date & Time" to enter the schedule time')
+      .addFields(
+        { name: '📺 Channel', value: '_Not selected_', inline: true },
+        { name: '⏰ Date & Time', value: '_Not set_', inline: true }
+      )
+      .setFooter({ text: 'All times are in UTC' });
+
+    await interaction.editReply({
+      embeds: [embed],
+      components: [channelRow, buttonRow]
+    });
+  }
+
+  /**
+   * Process schedule after Modal submission
+   */
+  async processScheduleCreation(interaction, datetime, channelId) {
     try {
       // Parse datetime (YYYY-MM-DD HH:MM) in UTC
       const [datePart, timePart] = datetime.split(' ');
@@ -1433,8 +1675,7 @@ export class DiscordBot {
       const now = new Date();
 
       if (scheduledDate <= now) {
-        await interaction.editReply('❌ The scheduled time must be in the future (UTC)!');
-        return;
+        return { success: false, error: 'The scheduled time must be in the future (UTC)!' };
       }
 
       const delay = scheduledDate.getTime() - now.getTime();
@@ -1450,7 +1691,7 @@ export class DiscordBot {
       // Save schedule data to file
       this.scheduledData = {
         datetime: datetime,
-        channelId: channel.id,
+        channelId: channelId,
         timestamp: Date.now()
       };
       this.saveSchedule();
@@ -1459,58 +1700,16 @@ export class DiscordBot {
       console.log(`📅 Scheduled for: ${scheduledDate.toISOString()}`);
       console.log(`🕐 Current time: ${now.toISOString()}`);
 
-      // Send confirmation
-      const embed = new EmbedBuilder()
-        .setColor(0x00ff00)
-        .setTitle('✅ Distribution Scheduled')
-        .setDescription(`The distribution will be posted in ${channel} at **${datetime} UTC**`)
-        .addFields(
-          { name: '⏰ Time Until Post', value: `${hoursUntil}h ${minsUntil}m`, inline: true },
-          { name: '📺 Channel', value: `${channel}`, inline: true }
-        )
-        .setFooter({ text: 'The schedule checker runs every 30 seconds to ensure delivery' })
-        .setTimestamp();
-
-      await interaction.editReply({ embeds: [embed] });
-
-      // Send the actual distribution preview as ephemeral
-      const formattedText = this.distributionManager.getFormattedDistribution();
-      if (formattedText && formattedText.length > 50) {
-        // Split into chunks for ephemeral messages (max 2000 chars)
-        const maxLength = 2000;
-        const chunks = [];
-        let currentChunk = '';
-        const lines = formattedText.split('\n');
-        
-        for (const line of lines) {
-          if ((currentChunk + line + '\n').length > maxLength) {
-            if (currentChunk) chunks.push(currentChunk);
-            currentChunk = line + '\n';
-          } else {
-            currentChunk += line + '\n';
-          }
-        }
-        if (currentChunk) chunks.push(currentChunk);
-        
-        // Send first chunk with header
-        await interaction.followUp({ 
-          content: '**Preview of the scheduled message:**\n\n' + chunks[0], 
-          ephemeral: true 
-        });
-        
-        // Send remaining chunks
-        for (let i = 1; i < chunks.length; i++) {
-          await interaction.followUp({ 
-            content: chunks[i], 
-            ephemeral: true 
-          });
-        }
-      } else {
-        await interaction.followUp({ content: '⚠️ No distribution data available yet. Please run /swap first.', ephemeral: true });
-      }
+      return {
+        success: true,
+        hoursUntil,
+        minsUntil,
+        datetime,
+        channelId
+      };
     } catch (error) {
-      console.error('❌ Error in handleSchedule:', error);
-      await interaction.editReply('❌ Invalid datetime format! Use: YYYY-MM-DD HH:MM (e.g., 2024-12-25 14:30)');
+      console.error('❌ Error in processScheduleCreation:', error);
+      return { success: false, error: 'Invalid datetime format! Use: YYYY-MM-DD HH:MM' };
     }
   }
 
@@ -1828,14 +2027,11 @@ export class DiscordBot {
   }
 
   /**
-   * Handle /done command - Show Admin Controls buttons
+   * Handle /done command - Show dropdown menus with buttons to mark players as done
    */
   async handleDone(interaction) {
-    // Show Admin Controls with buttons
-    await interaction.editReply({
-      content: '**Admin Controls** (Only you can see this)',
-      components: [this.createDistributionButtons()]
-    });
+    // Reuse the same logic as handleMarkDoneButton
+    await this.handleMarkDoneButton(interaction);
   }
 
   /**
