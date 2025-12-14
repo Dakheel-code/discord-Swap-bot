@@ -545,7 +545,7 @@ export class DistributionManager {
           }
           
           if (value) {
-            line += ` • ${value}`;
+            line += ` • **${value}**`;
           }
           if (isDone) {
             line += ' ✅';
