@@ -638,13 +638,14 @@ export class DistributionManager {
   }
 
   /**
-   * Get formatted list of players who haven't moved yet (no checkmark)
-   * @returns {string} Formatted text with players without checkmarks
+   * Get formatted list of all players with checkmark for those who moved
+   * @returns {string} Formatted text with all players (✅ for done)
    */
   getSwapsLeft() {
     let output = '**SWAPS LEFT**\n\n';
     
-    const playersNotMoved = [];
+    const allPlayers = [];
+    let doneCount = 0;
 
     // Check all groups (RGR, OTL, RND)
     ['RGR', 'OTL', 'RND'].forEach(groupName => {
@@ -676,14 +677,15 @@ export class DistributionManager {
           }
         }
         
-        // If not done, add to list with display name and mention
-        if (!isDone) {
-          playersNotMoved.push({
-            name: displayName,
-            mention: mention,
-            targetClan: groupName
-          });
-        }
+        if (isDone) doneCount++;
+        
+        // Add all players to list
+        allPlayers.push({
+          name: displayName,
+          mention: mention,
+          targetClan: groupName,
+          isDone: isDone
+        });
       });
     });
 
@@ -724,29 +726,32 @@ export class DistributionManager {
           }
         }
         
-        // If not done, add to list with display name and mention
-        if (!isDone) {
-          playersNotMoved.push({
-            name: displayName,
-            mention: mention,
-            targetClan: targetClan
-          });
-        }
+        if (isDone) doneCount++;
+        
+        // Add all players to list
+        allPlayers.push({
+          name: displayName,
+          mention: mention,
+          targetClan: targetClan,
+          isDone: isDone
+        });
       });
     }
 
     // Format output
-    if (playersNotMoved.length === 0) {
+    const remainingCount = allPlayers.length - doneCount;
+    if (remainingCount === 0) {
       output += '✅ All players have moved!\n';
     } else {
-      output += `Total players remaining: **${playersNotMoved.length}**\n\n`;
-      
-      playersNotMoved.forEach(player => {
-        // Use mention if available, add name after mention
-        const playerDisplay = player.mention ? `${player.mention} ${player.name}` : player.name;
-        output += `• ${playerDisplay} - Please move ➜ **${player.targetClan}**\n`;
-      });
+      output += `Total players remaining: **${remainingCount}** / ${allPlayers.length}\n\n`;
     }
+    
+    allPlayers.forEach(player => {
+      // Use mention if available, add name after mention
+      const playerDisplay = player.mention ? `${player.mention} ${player.name}` : player.name;
+      const checkmark = player.isDone ? ' ✅' : '';
+      output += `• ${playerDisplay} - Please move ➜ **${player.targetClan}**${checkmark}\n`;
+    });
 
     return output;
   }
