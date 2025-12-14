@@ -662,6 +662,16 @@ export class DiscordBot {
           return;
         }
         
+        // Auto-run swap if no data exists
+        if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
+          // Fetch and distribute players automatically
+          this.playersData = await fetchPlayersDataWithDiscordNames();
+          if (this.playersData && this.playersData.length > 0) {
+            this.distributionManager.distribute(this.playersData);
+            console.log('📊 Auto-distributed players for schedule');
+          }
+        }
+        
         // Process the schedule
         const result = await this.processScheduleCreation(interaction, datetime, channelId);
         
