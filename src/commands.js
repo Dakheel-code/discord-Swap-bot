@@ -12,27 +12,6 @@ export const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName('move')
-    .setDescription('Move players to a specific clan')
-    .addUserOption(option =>
-      option
-        .setName('player')
-        .setDescription('Discord user to move')
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName('clan')
-        .setDescription('Target clan (RGR, OTL, or RND)')
-        .setRequired(true)
-        .addChoices(
-          { name: 'RGR', value: 'RGR' },
-          { name: 'OTL', value: 'OTL' },
-          { name: 'RND', value: 'RND' }
-        )
-    ),
-
-  new SlashCommandBuilder()
     .setName('include')
     .setDescription('Include a previously excluded player')
     .addUserOption(option =>
@@ -45,10 +24,6 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('show')
     .setDescription('Show current distribution'),
-
-  new SlashCommandBuilder()
-    .setName('refresh')
-    .setDescription('Refresh data from Google Sheets'),
 
   new SlashCommandBuilder()
     .setName('reset')

@@ -371,21 +371,12 @@ export class DiscordBot {
           await this.handleDistribute(interaction);
           break;
 
-        case 'move':
-          await this.handleMove(interaction);
-          break;
-
-
         case 'include':
           await this.handleInclude(interaction);
           break;
 
         case 'show':
           await this.handleShow(interaction);
-          break;
-
-        case 'refresh':
-          await this.handleRefresh(interaction);
           break;
 
         case 'reset':
