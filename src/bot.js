@@ -607,8 +607,14 @@ export class DiscordBot {
    * Handle Schedule Set Time button - opens Modal with pre-filled defaults
    */
   async handleScheduleSetTimeButton(interaction) {
-    // Check if channel is selected
-    const channelId = this.pendingScheduleChannel.get(interaction.user.id);
+    // Check if channel is selected (from pending or existing schedule)
+    let channelId = this.pendingScheduleChannel.get(interaction.user.id);
+    
+    // If editing existing schedule, use that channel
+    if (!channelId && this.scheduledData) {
+      channelId = this.scheduledData.channelId;
+      this.pendingScheduleChannel.set(interaction.user.id, channelId);
+    }
     
     if (!channelId) {
       await interaction.reply({ 
@@ -618,7 +624,7 @@ export class DiscordBot {
       return;
     }
 
-    // Calculate tomorrow's date
+    // Calculate tomorrow's date or use existing schedule date
     const now = new Date();
     const tomorrow = new Date(now);
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
@@ -2445,7 +2451,7 @@ export class DiscordBot {
       this.scheduledData = {
         datetime: datetime,
         channelId: channelId,
-        timestamp: Date.now()
+        timestamp: scheduledDate.getTime()
       };
       this.saveSchedule();
 
