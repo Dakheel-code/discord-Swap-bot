@@ -955,7 +955,7 @@ export class DiscordBot {
    * Handle Reset Swap Only button
    */
   async handleResetSwapOnly(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferUpdate();
     
     try {
       // Clear distribution data
@@ -976,10 +976,10 @@ export class DiscordBot {
         .setDescription('The swap distribution has been cleared.\nRun `/swap` to create a new distribution.')
         .setTimestamp();
       
-      await interaction.editReply({ embeds: [embed] });
+      await interaction.editReply({ embeds: [embed], components: [] });
     } catch (error) {
       console.error('❌ Error resetting swap:', error);
-      await interaction.editReply(`❌ Error: ${error.message}`);
+      await interaction.editReply({ content: `❌ Error: ${error.message}`, embeds: [], components: [] });
     }
   }
 
@@ -987,7 +987,7 @@ export class DiscordBot {
    * Handle Reset All button
    */
   async handleResetAll(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferUpdate();
     
     try {
       // Clear distribution data
@@ -1017,10 +1017,10 @@ export class DiscordBot {
         .setDescription('Everything has been cleared:\n• Swap distribution\n• All manual actions (Move/Hold)\n• Schedule')
         .setTimestamp();
       
-      await interaction.editReply({ embeds: [embed] });
+      await interaction.editReply({ embeds: [embed], components: [] });
     } catch (error) {
       console.error('❌ Error resetting all:', error);
-      await interaction.editReply(`❌ Error: ${error.message}`);
+      await interaction.editReply({ content: `❌ Error: ${error.message}`, embeds: [], components: [] });
     }
   }
 
