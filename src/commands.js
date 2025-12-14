@@ -144,23 +144,7 @@ export const commands = [
 
   new SlashCommandBuilder()
     .setName('done')
-    .setDescription('Mark players as moved (adds/removes checkmark)')
-    .addStringOption(option =>
-      option
-        .setName('players')
-        .setDescription('Player names (separate multiple names with commas)')
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName('action')
-        .setDescription('Add or remove checkmark')
-        .setRequired(true)
-        .addChoices(
-          { name: 'Add ✅', value: 'add' },
-          { name: 'Remove ❌', value: 'remove' }
-        )
-    ),
+    .setDescription('Open dropdown menus to mark players as done'),
 
   new SlashCommandBuilder()
     .setName('swapsleft')
