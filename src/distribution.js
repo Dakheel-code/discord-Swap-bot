@@ -509,12 +509,13 @@ export class DistributionManager {
           const discordMention = player.DiscordName || '';
           const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
           
-          // Build display name: mention + (originalName) if both exist
+          // Build display name with <> format: <mention> (<originalName>)
           let name;
           if (discordMention && originalName && !discordMention.includes(originalName)) {
-            name = `${discordMention} (${originalName})`;
+            name = `<${discordMention}> (${originalName})`;
           } else {
-            name = discordMention || originalName || this.getPlayerName(player);
+            const displayName = discordMention || originalName || this.getPlayerName(player);
+            name = `<${displayName}>`;
           }
           
           const identifier = this.getPlayerIdentifier(player);
@@ -573,12 +574,13 @@ export class DistributionManager {
         const discordMention = player.DiscordName || '';
         const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
         
-        // Build display name: mention + (originalName) if both exist
+        // Build display name with <> format: <mention> (<originalName>)
         let name;
         if (discordMention && originalName && !discordMention.includes(originalName)) {
-          name = `${discordMention} (${originalName})`;
+          name = `<${discordMention}> (${originalName})`;
         } else {
-          name = discordMention || originalName || this.getPlayerName(player);
+          const displayName = discordMention || originalName || this.getPlayerName(player);
+          name = `<${displayName}>`;
         }
         
         const identifier = this.getPlayerIdentifier(player);
