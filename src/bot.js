@@ -1103,7 +1103,7 @@ export class DiscordBot {
         { name: '📋 Swaps Left', value: 'Show players who haven\'t moved yet', inline: true },
         { name: '🔄 Refresh', value: 'Refresh data from Google Sheets', inline: true },
         { name: '✅ Mark Done', value: 'Mark players as done (moved)', inline: true },
-        { name: '🔀 Move', value: 'Move a player to a specific clan', inline: true },
+        { name: '🔀 Move', value: 'Move or Hold a player to a specific clan', inline: true },
         { name: '📅 Schedule', value: 'Schedule swap post for later', inline: true },
         { name: '👁️ Show', value: 'Show current distribution', inline: true },
         { name: '➕ Add a player', value: 'Map in-game ID to Discord user', inline: true },
