@@ -379,10 +379,6 @@ export class DiscordBot {
           await this.handleShow(interaction);
           break;
 
-        case 'reset':
-          await this.handleReset(interaction);
-          break;
-
         case 'help':
           await this.handleHelp(interaction);
           break;
@@ -467,6 +463,24 @@ export class DiscordBot {
       // Handle Include Player button - clears manual action
       if (customId === 'include_player') {
         await this.handleIncludePlayerButton(interaction);
+        return;
+      }
+      
+      // Handle Reset Options button - shows reset options
+      if (customId === 'reset_options') {
+        await this.handleResetOptionsButton(interaction);
+        return;
+      }
+      
+      // Handle Reset Swap Only button
+      if (customId === 'reset_swap_only') {
+        await this.handleResetSwapOnly(interaction);
+        return;
+      }
+      
+      // Handle Reset All button
+      if (customId === 'reset_all') {
+        await this.handleResetAll(interaction);
         return;
       }
       
@@ -904,6 +918,112 @@ export class DiscordBot {
     
     // Clean up
     this.pendingMovePlayer.delete(interaction.user.id);
+  }
+
+  /**
+   * Handle Reset Options button - shows reset options
+   */
+  async handleResetOptionsButton(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    const embed = new EmbedBuilder()
+      .setColor(0xff0000)
+      .setTitle('🗑️ Reset Options')
+      .setDescription('Choose what you want to reset:')
+      .addFields(
+        { name: '📊 Reset Swap Only', value: 'Clears the current swap distribution', inline: false },
+        { name: '⚠️ Reset All', value: 'Clears swap + all manual actions + schedule', inline: false }
+      )
+      .setFooter({ text: '⚠️ This action cannot be undone!' });
+    
+    const buttonRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('reset_swap_only')
+          .setLabel('Reset Swap Only')
+          .setEmoji('📊')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('reset_all')
+          .setLabel('Reset All')
+          .setEmoji('⚠️')
+          .setStyle(ButtonStyle.Danger)
+      );
+    
+    await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+  }
+
+  /**
+   * Handle Reset Swap Only button
+   */
+  async handleResetSwapOnly(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+      // Clear distribution data
+      this.distributionManager.reset();
+      this.playersData = [];
+      this.lastDistributionMessages = [];
+      this.lastSwapsLeftMessages = [];
+      
+      // Delete saved message IDs
+      const messagesFilePath = './distribution_messages.json';
+      if (fs.existsSync(messagesFilePath)) {
+        fs.unlinkSync(messagesFilePath);
+      }
+      
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff00)
+        .setTitle('✅ Swap Reset')
+        .setDescription('The swap distribution has been cleared.\nRun `/swap` to create a new distribution.')
+        .setTimestamp();
+      
+      await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      console.error('❌ Error resetting swap:', error);
+      await interaction.editReply(`❌ Error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle Reset All button
+   */
+  async handleResetAll(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+      // Clear distribution data
+      this.distributionManager.reset();
+      this.playersData = [];
+      this.lastDistributionMessages = [];
+      this.lastSwapsLeftMessages = [];
+      
+      // Delete saved message IDs
+      const messagesFilePath = './distribution_messages.json';
+      if (fs.existsSync(messagesFilePath)) {
+        fs.unlinkSync(messagesFilePath);
+      }
+      
+      // Clear all actions from Google Sheet
+      await clearAllPlayerActions();
+      
+      // Delete schedule
+      if (this.scheduledData) {
+        this.scheduledData = null;
+        this.deleteSchedule();
+      }
+      
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff00)
+        .setTitle('✅ All Reset')
+        .setDescription('Everything has been cleared:\n• Swap distribution\n• All manual actions (Move/Hold)\n• Schedule')
+        .setTimestamp();
+      
+      await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      console.error('❌ Error resetting all:', error);
+      await interaction.editReply(`❌ Error: ${error.message}`);
+    }
   }
 
   /**
@@ -2748,7 +2868,13 @@ export class DiscordBot {
           .setCustomId('add_player')
           .setLabel('Add a player')
           .setEmoji('➕')
-          .setStyle(ButtonStyle.Success)
+          .setStyle(ButtonStyle.Success),
+        
+        new ButtonBuilder()
+          .setCustomId('reset_options')
+          .setLabel('Reset')
+          .setEmoji('🗑️')
+          .setStyle(ButtonStyle.Danger)
       );
     
     return [row1, row2];

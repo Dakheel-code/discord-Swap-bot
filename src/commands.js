@@ -26,20 +26,6 @@ export const commands = [
     .setDescription('Show current distribution'),
 
   new SlashCommandBuilder()
-    .setName('reset')
-    .setDescription('Reset settings')
-    .addStringOption(option =>
-      option
-        .setName('type')
-        .setDescription('What to reset')
-        .setRequired(true)
-        .addChoices(
-          { name: 'Reset All Settings (Actions + Swap)', value: 'all' },
-          { name: 'Reset Swap Only', value: 'swap' }
-        )
-    ),
-
-  new SlashCommandBuilder()
     .setName('help')
     .setDescription('Show all available commands and usage instructions'),
 
