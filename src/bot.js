@@ -464,6 +464,12 @@ export class DiscordBot {
         return;
       }
       
+      // Handle Include Player button - clears manual action
+      if (customId === 'include_player') {
+        await this.handleIncludePlayerButton(interaction);
+        return;
+      }
+      
       await interaction.deferReply({ ephemeral: true });
       
       switch (customId) {
@@ -753,13 +759,23 @@ export class DiscordBot {
     
     const clanRow = new ActionRowBuilder().addComponents(clanSelect);
     
+    // Add Include button to clear manual action
+    const buttonRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('include_player')
+          .setLabel('Include')
+          .setEmoji('♻️')
+          .setStyle(ButtonStyle.Secondary)
+      );
+    
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle('🔀 Move Player')
-      .setDescription(`**Selected:** ${playerName}\n\n**Step 2:** Choose the target clan`)
+      .setDescription(`**Selected:** ${playerName}\n\n**Step 2:** Choose the target clan\n\nOr click **Include** to remove manual action`)
       .setFooter({ text: 'Select a clan to complete the move' });
     
-    await interaction.editReply({ embeds: [embed], components: [clanRow] });
+    await interaction.editReply({ embeds: [embed], components: [clanRow, buttonRow] });
   }
 
   /**
@@ -831,6 +847,59 @@ export class DiscordBot {
     } catch (error) {
       console.error(`❌ Error moving player:`, error);
       await interaction.editReply(`❌ Failed to move player: ${error.message}`);
+    }
+    
+    // Clean up
+    this.pendingMovePlayer.delete(interaction.user.id);
+  }
+
+  /**
+   * Handle Include Player button - clears manual action
+   */
+  async handleIncludePlayerButton(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    // Get stored player
+    if (!this.pendingMovePlayer || !this.pendingMovePlayer.has(interaction.user.id)) {
+      await interaction.editReply('❌ No player selected. Please start over.');
+      return;
+    }
+    
+    const playerData = this.pendingMovePlayer.get(interaction.user.id);
+    const { discordId, name: playerName } = playerData;
+    
+    if (!discordId) {
+      await interaction.editReply(`❌ Player "${playerName}" doesn't have a Discord ID mapped.`);
+      this.pendingMovePlayer.delete(interaction.user.id);
+      return;
+    }
+    
+    try {
+      // Clear action from Google Sheet
+      console.log(`♻️ Clearing action for player "${playerName}" (discordId: ${discordId})`);
+      await clearPlayerAction(discordId);
+      console.log(`✅ Action cleared successfully`);
+      
+      // Refresh and redistribute
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+      this.distributionManager.distribute(this.playersData);
+      
+      // Update messages if they exist
+      if (this.lastDistributionMessages && this.lastDistributionMessages.length > 0) {
+        const formattedText = this.distributionManager.getFormattedDistribution();
+        await this.updateDistributionMessages(formattedText);
+      }
+      
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff00)
+        .setTitle('✅ Player Included')
+        .setDescription(`**${playerName}** manual action has been removed.\nPlayer will now be distributed automatically.`)
+        .setTimestamp();
+      
+      await interaction.editReply({ embeds: [embed], components: [] });
+    } catch (error) {
+      console.error(`❌ Error including player:`, error);
+      await interaction.editReply(`❌ Failed to include player: ${error.message}`);
     }
     
     // Clean up
