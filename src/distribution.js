@@ -530,7 +530,17 @@ export class DistributionManager {
             }
           }
           
-          const value = this.sortColumn ? player[this.sortColumn] : '';
+          // Try to get trophies value from different possible column names
+          let value = '';
+          if (this.sortColumn) {
+            value = player[this.sortColumn] || '';
+          }
+          // Fallback: try common trophy column names
+          if (!value) {
+            value = player['Trophies'] || player['trophies'] || player['TROPHIES'] || 
+                    player['Trophy'] || player['trophy'] || player['Cups'] || player['cups'] ||
+                    player['Score'] || player['score'] || '';
+          }
           
           // Format: › @mention • Name • **value**
           let line = '› ';
