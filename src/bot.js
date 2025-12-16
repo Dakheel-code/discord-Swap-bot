@@ -715,13 +715,15 @@ export class DiscordBot {
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId(`move_player_select_${i}`)
         .setPlaceholder(`Players ${startNum}-${endNum}`)
+        .setMinValues(1)
+        .setMaxValues(chunks[i].length)
         .addOptions(chunks[i]);
       
       components.push(new ActionRowBuilder().addComponents(selectMenu));
     }
     
     // If more than 125 players, add a note
-    let description = '**Step 1:** Select a player from the lists below\n**Step 2:** Choose the target clan';
+    let description = '**Step 1:** Select players from the lists below (you can select multiple)\n**Step 2:** Choose the target clan';
     if (players.length > 125) {
       description += `\n\n⚠️ Showing first 125 of ${players.length} players`;
     }
@@ -730,44 +732,55 @@ export class DiscordBot {
       .setColor(0x5865F2)
       .setTitle('🔀 Move Player')
       .setDescription(description)
-      .setFooter({ text: 'Select a player to move them to a different clan' });
+      .setFooter({ text: 'Select one or more players to move them to a different clan' });
     
     await interaction.editReply({ embeds: [embed], components });
   }
 
   /**
-   * Handle player selection from Move dropdown
+   * Handle player selection from Move dropdown (supports multiple players)
    */
   async handleMovePlayerSelect(interaction) {
-    const selectedValue = interaction.values[0];
-    // Parse: player_INDEX_DISCORDID
-    const parts = selectedValue.split('_');
-    const playerIndex = parseInt(parts[1]);
-    const discordIdFromValue = parts.slice(2).join('_'); // In case ID has underscores
+    const selectedValues = interaction.values;
     
-    if (!this.playersData || playerIndex >= this.playersData.length) {
-      await interaction.editReply('❌ Player not found. Please try again.');
+    // Parse all selected players
+    const selectedPlayers = [];
+    for (const selectedValue of selectedValues) {
+      // Parse: player_INDEX_DISCORDID
+      const parts = selectedValue.split('_');
+      const playerIndex = parseInt(parts[1]);
+      const discordIdFromValue = parts.slice(2).join('_'); // In case ID has underscores
+      
+      if (!this.playersData || playerIndex >= this.playersData.length) {
+        continue;
+      }
+      
+      const player = this.playersData[playerIndex];
+      const playerName = player.Name || player.Player || player.USERNAME || 'Unknown';
+      
+      // Get Discord ID from player data (more reliable than from value)
+      const discordId = player['Discord-ID'] || (discordIdFromValue !== 'no_id' ? discordIdFromValue : null);
+      
+      console.log(`📋 Selected player: "${playerName}" (index: ${playerIndex})`);
+      console.log(`   Discord-ID from data: "${player['Discord-ID']}"`);
+      console.log(`   Discord-ID from value: "${discordIdFromValue}"`);
+      console.log(`   Final Discord-ID: "${discordId}"`);
+      
+      selectedPlayers.push({
+        index: playerIndex,
+        discordId: discordId,
+        name: playerName
+      });
+    }
+    
+    if (selectedPlayers.length === 0) {
+      await interaction.editReply('❌ No valid players found. Please try again.');
       return;
     }
     
-    const player = this.playersData[playerIndex];
-    const playerName = player.Name || player.Player || player.USERNAME || 'Unknown';
-    
-    // Get Discord ID from player data (more reliable than from value)
-    const discordId = player['Discord-ID'] || (discordIdFromValue !== 'no_id' ? discordIdFromValue : null);
-    
-    console.log(`📋 Selected player: "${playerName}" (index: ${playerIndex})`);
-    console.log(`   Discord-ID from data: "${player['Discord-ID']}"`);
-    console.log(`   Discord-ID from value: "${discordIdFromValue}"`);
-    console.log(`   Final Discord-ID: "${discordId}"`);
-    
-    // Store selected player for this user
+    // Store selected players for this user (now an array)
     this.pendingMovePlayer = this.pendingMovePlayer || new Map();
-    this.pendingMovePlayer.set(interaction.user.id, {
-      index: playerIndex,
-      discordId: discordId,
-      name: playerName
-    });
+    this.pendingMovePlayer.set(interaction.user.id, selectedPlayers);
     
     // Show clan selection
     const clanSelect = new StringSelectMenuBuilder()
@@ -791,59 +804,77 @@ export class DiscordBot {
           .setStyle(ButtonStyle.Secondary)
       );
     
+    // Build selected players list for display
+    const playerNames = selectedPlayers.map(p => p.name).join('\n• ');
+    const playerCount = selectedPlayers.length;
+    const selectedText = playerCount === 1 
+      ? `**Selected:** ${selectedPlayers[0].name}`
+      : `**Selected (${playerCount} players):**\n• ${playerNames}`;
+    
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle('🔀 Move Player')
-      .setDescription(`**Selected:** ${playerName}\n\n**Step 2:** Choose the target clan\n\nOr click **Include** to remove manual action`)
-      .setFooter({ text: 'Select a clan to complete the move' });
+      .setDescription(`${selectedText}\n\n**Step 2:** Choose the target clan\n\nOr click **Include** to remove manual action`)
+      .setFooter({ text: playerCount === 1 ? 'Select a clan to complete the move' : `Select a clan to move all ${playerCount} players` });
     
     await interaction.editReply({ embeds: [embed], components: [clanRow, buttonRow] });
   }
 
   /**
-   * Handle clan selection for Move
+   * Handle clan selection for Move (supports multiple players)
    */
   async handleMoveClanSelect(interaction) {
     const targetClan = interaction.values[0];
     
-    // Get stored player
+    // Get stored players
     if (!this.pendingMovePlayer || !this.pendingMovePlayer.has(interaction.user.id)) {
       await interaction.editReply('❌ No player selected. Please start over.');
       return;
     }
     
-    const playerData = this.pendingMovePlayer.get(interaction.user.id);
-    const { discordId, name: playerName, index: playerIndex } = playerData;
+    const selectedPlayers = this.pendingMovePlayer.get(interaction.user.id);
     
-    console.log(`🔀 Move request: Player "${playerName}" (index: ${playerIndex}, discordId: ${discordId}) to ${targetClan}`);
+    // Ensure it's an array (backward compatibility)
+    const playersArray = Array.isArray(selectedPlayers) ? selectedPlayers : [selectedPlayers];
     
-    if (!discordId) {
-      await interaction.editReply(`❌ Player "${playerName}" doesn't have a Discord ID mapped. Use /map first.`);
-      this.pendingMovePlayer.delete(interaction.user.id);
-      return;
-    }
+    console.log(`🔀 Move request: ${playersArray.length} player(s) to ${targetClan}`);
+    
+    const successList = [];
+    const failList = [];
     
     try {
-      // Get player's current clan
-      const player = this.playersData[playerIndex];
-      const currentClan = player?.Clan || player?.clan || '';
-      
-      // If moving to same clan, use HOLD instead
-      let actionToWrite = targetClan;
-      let actionMessage = `moved to **${targetClan}**`;
-      
-      if (currentClan.toUpperCase() === targetClan.toUpperCase()) {
-        actionToWrite = 'Hold';
-        actionMessage = `set to **HOLD** (staying in ${targetClan})`;
-        console.log(`📌 Player is already in ${currentClan}, setting to HOLD`);
+      for (const playerData of playersArray) {
+        const { discordId, name: playerName, index: playerIndex } = playerData;
+        
+        if (!discordId) {
+          failList.push(`${playerName} (no Discord ID)`);
+          continue;
+        }
+        
+        // Get player's current clan
+        const player = this.playersData[playerIndex];
+        const currentClan = player?.Clan || player?.clan || '';
+        
+        // If moving to same clan, use HOLD instead
+        let actionToWrite = targetClan;
+        
+        if (currentClan.toUpperCase() === targetClan.toUpperCase()) {
+          actionToWrite = 'Hold';
+          console.log(`📌 Player "${playerName}" is already in ${currentClan}, setting to HOLD`);
+        }
+        
+        // Write action to Google Sheet
+        console.log(`📝 Writing action: "${playerName}" -> ${actionToWrite}`);
+        await writePlayerAction(discordId, actionToWrite);
+        
+        if (actionToWrite === 'Hold') {
+          successList.push(`${playerName} → HOLD`);
+        } else {
+          successList.push(`${playerName} → ${targetClan}`);
+        }
       }
       
-      // Write action to Google Sheet
-      console.log(`📝 Writing action to Google Sheet: discordId="${discordId}", action="${actionToWrite}"`);
-      await writePlayerAction(discordId, actionToWrite);
-      console.log(`✅ Action written successfully`);
-      
-      // Refresh and redistribute
+      // Refresh and redistribute once after all changes
       console.log(`🔄 Refreshing player data...`);
       this.playersData = await fetchPlayersDataWithDiscordNames();
       this.distributionManager.distribute(this.playersData);
@@ -855,20 +886,27 @@ export class DiscordBot {
         const formattedText = this.distributionManager.getFormattedDistribution();
         await this.updateDistributionMessages(formattedText);
         console.log(`✅ Messages updated`);
-      } else {
-        console.log(`⚠️ No distribution messages to update (lastDistributionMessages: ${this.lastDistributionMessages?.length || 0})`);
+      }
+      
+      // Build result message
+      let description = '';
+      if (successList.length > 0) {
+        description += `**✅ Moved (${successList.length}):**\n• ${successList.join('\n• ')}`;
+      }
+      if (failList.length > 0) {
+        description += `\n\n**❌ Failed (${failList.length}):**\n• ${failList.join('\n• ')}`;
       }
       
       const embed = new EmbedBuilder()
-        .setColor(0x00ff00)
-        .setTitle(actionToWrite === 'Hold' ? '✅ Player Set to HOLD' : '✅ Player Moved')
-        .setDescription(`**${playerName}** ${actionMessage}`)
+        .setColor(failList.length === 0 ? 0x00ff00 : 0xffaa00)
+        .setTitle(playersArray.length === 1 ? '✅ Player Moved' : `✅ ${successList.length} Players Moved`)
+        .setDescription(description)
         .setTimestamp();
       
       await interaction.editReply({ embeds: [embed], components: [] });
     } catch (error) {
-      console.error(`❌ Error moving player:`, error);
-      await interaction.editReply(`❌ Failed to move player: ${error.message}`);
+      console.error(`❌ Error moving players:`, error);
+      await interaction.editReply(`❌ Failed to move players: ${error.message}`);
     }
     
     // Clean up
@@ -876,33 +914,41 @@ export class DiscordBot {
   }
 
   /**
-   * Handle Include Player button - clears manual action
+   * Handle Include Player button - clears manual action (supports multiple players)
    */
   async handleIncludePlayerButton(interaction) {
     await interaction.deferReply({ ephemeral: true });
     
-    // Get stored player
+    // Get stored players
     if (!this.pendingMovePlayer || !this.pendingMovePlayer.has(interaction.user.id)) {
       await interaction.editReply('❌ No player selected. Please start over.');
       return;
     }
     
-    const playerData = this.pendingMovePlayer.get(interaction.user.id);
-    const { discordId, name: playerName } = playerData;
+    const selectedPlayers = this.pendingMovePlayer.get(interaction.user.id);
     
-    if (!discordId) {
-      await interaction.editReply(`❌ Player "${playerName}" doesn't have a Discord ID mapped.`);
-      this.pendingMovePlayer.delete(interaction.user.id);
-      return;
-    }
+    // Ensure it's an array (backward compatibility)
+    const playersArray = Array.isArray(selectedPlayers) ? selectedPlayers : [selectedPlayers];
+    
+    const successList = [];
+    const failList = [];
     
     try {
-      // Clear action from Google Sheet
-      console.log(`♻️ Clearing action for player "${playerName}" (discordId: ${discordId})`);
-      await clearPlayerAction(discordId);
-      console.log(`✅ Action cleared successfully`);
+      for (const playerData of playersArray) {
+        const { discordId, name: playerName } = playerData;
+        
+        if (!discordId) {
+          failList.push(`${playerName} (no Discord ID)`);
+          continue;
+        }
+        
+        // Clear action from Google Sheet
+        console.log(`♻️ Clearing action for player "${playerName}" (discordId: ${discordId})`);
+        await clearPlayerAction(discordId);
+        successList.push(playerName);
+      }
       
-      // Refresh and redistribute
+      // Refresh and redistribute once after all changes
       this.playersData = await fetchPlayersDataWithDiscordNames();
       this.distributionManager.distribute(this.playersData);
       
@@ -912,16 +958,26 @@ export class DiscordBot {
         await this.updateDistributionMessages(formattedText);
       }
       
+      // Build result message
+      let description = '';
+      if (successList.length > 0) {
+        description += `**✅ Included (${successList.length}):**\n• ${successList.join('\n• ')}`;
+        description += '\n\nPlayers will now be distributed automatically.';
+      }
+      if (failList.length > 0) {
+        description += `\n\n**❌ Failed (${failList.length}):**\n• ${failList.join('\n• ')}`;
+      }
+      
       const embed = new EmbedBuilder()
-        .setColor(0x00ff00)
-        .setTitle('✅ Player Included')
-        .setDescription(`**${playerName}** manual action has been removed.\nPlayer will now be distributed automatically.`)
+        .setColor(failList.length === 0 ? 0x00ff00 : 0xffaa00)
+        .setTitle(playersArray.length === 1 ? '✅ Player Included' : `✅ ${successList.length} Players Included`)
+        .setDescription(description)
         .setTimestamp();
       
       await interaction.editReply({ embeds: [embed], components: [] });
     } catch (error) {
-      console.error(`❌ Error including player:`, error);
-      await interaction.editReply(`❌ Failed to include player: ${error.message}`);
+      console.error(`❌ Error including players:`, error);
+      await interaction.editReply(`❌ Failed to include players: ${error.message}`);
     }
     
     // Clean up
