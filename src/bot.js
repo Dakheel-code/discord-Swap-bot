@@ -1848,7 +1848,8 @@ export class DiscordBot {
     } else {
       // Don't send to channel - just show preview and admin controls (ephemeral)
       // Send preview as ephemeral
-      const maxLength = 2000;
+      const header = '**Preview:**\n\n';
+      const maxLength = 2000 - header.length; // Reserve space for header
       const chunks = [];
       let currentChunk = '';
       const lines = formattedText.split('\n');
@@ -1865,7 +1866,7 @@ export class DiscordBot {
       
       // Send first chunk with header
       await interaction.followUp({ 
-        content: '**Preview:**\n\n' + chunks[0], 
+        content: header + chunks[0], 
         ephemeral: true 
       });
       
