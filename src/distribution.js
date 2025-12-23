@@ -593,7 +593,7 @@ export class DistributionManager {
         }
       });
 
-      output += `# ⚡ WILDCARDS (${this.groups.WILDCARDS.length})\n`;
+      output += `# WILDCARDS (${this.groups.WILDCARDS.length})\n`;
       this.groups.WILDCARDS.forEach((player, index) => {
         // Get Discord mention and original name
         const discordMention = player.DiscordName || '';
@@ -636,9 +636,9 @@ export class DistributionManager {
         
         if (info) {
           if (info.type === 'excluded') {
-            line += ` ⏸ **Stay in ${info.target}**`;
+            line += ` **Stay in ${info.target}**`;
           } else if (info.type === 'manual') {
-            line += ` moves ➜ **${info.target}**`;
+            line += ` moves to **${info.target}**`;
           }
         }
         
@@ -711,7 +711,7 @@ export class DistributionManager {
       specificPlayers.forEach(player => {
         const playerDisplay = player.mention ? `${player.mention} ${player.name}` : player.name;
         const checkmark = player.isDone ? ' ✅' : '';
-        output += `• ${playerDisplay} - Please move ➜ **${player.targetClan}**${checkmark}\n`;
+        output += `• ${playerDisplay} - Please move to **${player.targetClan}**${checkmark}\n`;
       });
       
       return { text: output, players: specificPlayers };
