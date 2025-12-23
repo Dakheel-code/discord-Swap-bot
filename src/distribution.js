@@ -636,7 +636,7 @@ export class DistributionManager {
         
         if (info) {
           if (info.type === 'excluded') {
-            line += ` **Stay in ${info.target}**`;
+            line += ` Stay in ${info.target}`;
           } else if (info.type === 'manual') {
             line += ` moves to **${info.target}**`;
           }
