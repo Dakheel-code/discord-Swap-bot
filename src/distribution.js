@@ -46,12 +46,20 @@ export class DistributionManager {
     const playersWithAction = [];
     const availablePlayers = [];
     
-    players.forEach(player => {
+    console.log(`🔍 distribute: Processing ${players.length} players`);
+    console.log(`🔍 First player keys:`, players.length > 0 ? Object.keys(players[0]) : 'No players');
+    
+    players.forEach((player, index) => {
       const action = player.Action ? player.Action.trim() : '';
       const identifier = this.getPlayerIdentifier(player);
       
+      if (index < 3) {
+        console.log(`🔍 Player ${index + 1}: Name="${identifier}", Action="${action}"`);
+      }
+      
       if (action) {
         // Player has an action - add to WILDCARDS
+        console.log(`✅ Adding to WILDCARDS: ${identifier} (Action: ${action})`);
         playersWithAction.push(player);
         
         // Store wildcard info
@@ -83,8 +91,13 @@ export class DistributionManager {
       }
     });
     
+    console.log(`📊 After processing:`);
+    console.log(`  - playersWithAction: ${playersWithAction.length}`);
+    console.log(`  - availablePlayers: ${availablePlayers.length}`);
+    
     // Add players with actions to WILDCARDS
     this.groups.WILDCARDS = playersWithAction;
+    console.log(`📊 WILDCARDS set to ${this.groups.WILDCARDS.length} players`);
 
     // Sort available players by the specified column (descending)
     const sortedPlayers = [...availablePlayers].sort((a, b) => {

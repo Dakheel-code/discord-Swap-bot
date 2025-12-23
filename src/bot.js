@@ -365,8 +365,9 @@ export class DiscordBot {
 
     try {
       // Defer reply - make all commands ephemeral (hidden)
-      // Only scheduled posts will be visible to everyone
-      await interaction.deferReply({ ephemeral: true });
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply({ ephemeral: true });
+      }
 
       switch (commandName) {
         case 'swap':
@@ -383,7 +384,11 @@ export class DiscordBot {
     } catch (error) {
       console.error(`Error handling command ${commandName}:`, error);
       const errorMessage = error.message || 'An error occurred';
-      await interaction.editReply(`❌ Error: ${errorMessage}`);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: `❌ Error: ${errorMessage}`, ephemeral: true });
+      } else {
+        await interaction.editReply(`❌ Error: ${errorMessage}`).catch(() => {});
+      }
     }
   }
 
@@ -486,7 +491,9 @@ export class DiscordBot {
         return;
       }
       
-      await interaction.deferReply({ ephemeral: true });
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply({ ephemeral: true });
+      }
       
       switch (customId) {
         case 'show_swaps_left':
@@ -501,28 +508,16 @@ export class DiscordBot {
           await this.handleMarkDoneButton(interaction);
           break;
         
-        case 'mark_all_done':
-          await this.handleMarkAllDone(interaction);
-          break;
-        
-        case 'mark_rgr_done':
-          await this.handleMarkClanDone(interaction, 'RGR');
-          break;
-        
-        case 'mark_otl_done':
-          await this.handleMarkClanDone(interaction, 'OTL');
-          break;
-        
-        case 'mark_rnd_done':
-          await this.handleMarkClanDone(interaction, 'RND');
-          break;
-        
         default:
           await interaction.editReply('❌ Unknown button');
       }
     } catch (error) {
       console.error(`❌ Error handling button ${customId}:`, error);
-      await interaction.editReply(`❌ Error: ${error.message}`);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: `❌ Error: ${error.message}`, ephemeral: true }).catch(() => {});
+      } else {
+        await interaction.editReply(`❌ Error: ${error.message}`).catch(() => {});
+      }
     }
   }
 
@@ -1495,6 +1490,7 @@ export class DiscordBot {
     
     ['RGR', 'OTL', 'RND', 'WILDCARDS'].forEach(groupName => {
       if (this.distributionManager.groups[groupName]) {
+        console.log(`📊 ${groupName}: ${this.distributionManager.groups[groupName].length} players`);
         this.distributionManager.groups[groupName].forEach(player => {
           const identifier = this.distributionManager.getPlayerIdentifier(player);
           
@@ -1526,8 +1522,16 @@ export class DiscordBot {
           
           if (!isDone) totalNotDone++;
         });
+      } else {
+        console.log(`⚠️ ${groupName}: group is undefined or null`);
       }
     });
+    
+    console.log(`📋 Final playersByClans counts:`);
+    console.log(`  RGR: ${playersByClans.RGR.length}`);
+    console.log(`  OTL: ${playersByClans.OTL.length}`);
+    console.log(`  RND: ${playersByClans.RND.length}`);
+    console.log(`  WILDCARDS: ${playersByClans.WILDCARDS.length}`);
 
     if (totalNotDone === 0) {
       // Send public completion message
@@ -1540,36 +1544,6 @@ export class DiscordBot {
 
     // Create 3 separate select menus (one for each clan)
     const components = [];
-
-    // Create buttons row first
-    const buttonsRow = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('mark_all_done')
-          .setLabel('Mark All Done')
-          .setEmoji('✅')
-          .setStyle(ButtonStyle.Success),
-        
-        new ButtonBuilder()
-          .setCustomId('mark_rgr_done')
-          .setLabel('RGR Done')
-          .setEmoji('🏆')
-          .setStyle(ButtonStyle.Primary),
-        
-        new ButtonBuilder()
-          .setCustomId('mark_otl_done')
-          .setLabel('OTL Done')
-          .setEmoji('🏆')
-          .setStyle(ButtonStyle.Primary),
-        
-        new ButtonBuilder()
-          .setCustomId('mark_rnd_done')
-          .setLabel('RND Done')
-          .setEmoji('🏆')
-          .setStyle(ButtonStyle.Primary)
-      );
-    
-    components.push(buttonsRow);
 
     // RGR Select Menu - show ALL players
     if (playersByClans.RGR.length > 0) {
@@ -1628,12 +1602,13 @@ export class DiscordBot {
       components.push(new ActionRowBuilder().addComponents(rndSelectMenu));
     }
 
-    // WILDCARDS Select Menu - show ALL players
+    // WILDCARDS Select Menu - show ALL players (even if all are done)
     if (playersByClans.WILDCARDS.length > 0) {
       const wildcardsRemaining = playersByClans.WILDCARDS.filter(p => !p.isDone).length;
       const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => ({
         label: player.name,
-        value: player.identifier
+        value: player.identifier,
+        emoji: '⚡'
       }));
 
       const wildcardsSelectMenu = new StringSelectMenuBuilder()
@@ -1650,8 +1625,7 @@ export class DiscordBot {
     const instructions = `Select players to mark as done (${totalNotDone} remaining):\n\n` +
       `**How to use:**\n` +
       `• Select a player → Adds ✅ mark\n` +
-      `• Select same player again → Removes ✅ mark\n` +
-      `• Use buttons above for quick actions`;
+      `• Select same player again → Removes ✅ mark`;
     
     await interaction.editReply({
       content: instructions,
@@ -1795,144 +1769,6 @@ export class DiscordBot {
     await interaction.editReply(responseMsg);
   }
 
-  /**
-   * Handle "Mark All Done" button
-   */
-  async handleMarkAllDone(interaction) {
-    // Get all players who are not done yet
-    const playersToMark = [];
-    
-    ['RGR', 'OTL', 'RND'].forEach(groupName => {
-      if (this.distributionManager.groups[groupName]) {
-        this.distributionManager.groups[groupName].forEach(player => {
-          const identifier = this.distributionManager.getPlayerIdentifier(player);
-          
-          let isDone = this.distributionManager.completedPlayers.has(identifier);
-          if (!isDone && player.DiscordName) {
-            isDone = this.distributionManager.completedPlayers.has(player.DiscordName);
-          }
-          
-          if (!isDone) {
-            playersToMark.push(identifier);
-          }
-        });
-      }
-    });
-
-    if (playersToMark.length === 0) {
-      await interaction.editReply('✅ All players are already marked as done!');
-      return;
-    }
-
-    // Mark all players as done
-    playersToMark.forEach(identifier => {
-      this.distributionManager.completedPlayers.add(identifier);
-    });
-
-    // Update messages
-    const formattedText = this.distributionManager.getFormattedDistribution();
-    await this.updateDistributionMessages(formattedText);
-
-    // Update swapsleft messages
-    if (this.lastSwapsLeftMessages && this.lastSwapsLeftMessages.length > 0) {
-      const swapsLeftText = this.distributionManager.getSwapsLeft();
-      const maxLength = 2000;
-      const chunks = [];
-      
-      let currentChunk = '';
-      const lines = swapsLeftText.split('\n');
-      
-      for (const line of lines) {
-        if ((currentChunk + line + '\n').length > maxLength) {
-          if (currentChunk) chunks.push(currentChunk);
-          currentChunk = line + '\n';
-        } else {
-          currentChunk += line + '\n';
-        }
-      }
-      if (currentChunk) chunks.push(currentChunk);
-
-      for (let i = 0; i < Math.min(chunks.length, this.lastSwapsLeftMessages.length); i++) {
-        try {
-          await this.lastSwapsLeftMessages[i].edit(chunks[i]);
-        } catch (error) {
-          console.error(`❌ Failed to update swapsleft message ${i + 1}: ${error.message}`);
-        }
-      }
-    }
-
-    // Send public completion message
-    await interaction.channel.send('**SWAPS COMPLETED**');
-    
-    await interaction.editReply(`✅ Marked all ${playersToMark.length} player(s) as done!`);
-  }
-
-  /**
-   * Handle "Mark Clan Done" button
-   */
-  async handleMarkClanDone(interaction, clanName) {
-    // Get all players from the specified clan who are not done yet
-    const playersToMark = [];
-    
-    if (this.distributionManager.groups[clanName]) {
-      this.distributionManager.groups[clanName].forEach(player => {
-        const identifier = this.distributionManager.getPlayerIdentifier(player);
-        
-        let isDone = this.distributionManager.completedPlayers.has(identifier);
-        if (!isDone && player.DiscordName) {
-          isDone = this.distributionManager.completedPlayers.has(player.DiscordName);
-        }
-        
-        if (!isDone) {
-          playersToMark.push(identifier);
-        }
-      });
-    }
-
-    if (playersToMark.length === 0) {
-      await interaction.editReply(`✅ All ${clanName} players are already marked as done!`);
-      return;
-    }
-
-    // Mark all clan players as done
-    playersToMark.forEach(identifier => {
-      this.distributionManager.completedPlayers.add(identifier);
-    });
-
-    // Update messages
-    const formattedText = this.distributionManager.getFormattedDistribution();
-    await this.updateDistributionMessages(formattedText);
-
-    // Update swapsleft messages
-    if (this.lastSwapsLeftMessages && this.lastSwapsLeftMessages.length > 0) {
-      const swapsLeftText = this.distributionManager.getSwapsLeft();
-      const maxLength = 2000;
-      const chunks = [];
-      
-      let currentChunk = '';
-      const lines = swapsLeftText.split('\n');
-      
-      for (const line of lines) {
-        if ((currentChunk + line + '\n').length > maxLength) {
-          if (currentChunk) chunks.push(currentChunk);
-          currentChunk = line + '\n';
-        } else {
-          currentChunk += line + '\n';
-        }
-      }
-      if (currentChunk) chunks.push(currentChunk);
-
-      for (let i = 0; i < Math.min(chunks.length, this.lastSwapsLeftMessages.length); i++) {
-        try {
-          await this.lastSwapsLeftMessages[i].edit(chunks[i]);
-        } catch (error) {
-          console.error(`❌ Failed to update swapsleft message ${i + 1}: ${error.message}`);
-        }
-      }
-    }
-
-    await interaction.editReply(`✅ Marked all ${playersToMark.length} ${clanName} player(s) as done!`);
-  }
 
   /**
    * Handle /swap command (formerly /distribute)
