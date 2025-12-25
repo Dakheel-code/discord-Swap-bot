@@ -741,7 +741,7 @@ export class DiscordBot {
     const month = String(tomorrow.getUTCMonth() + 1).padStart(2, '0');
     const day = String(tomorrow.getUTCDate()).padStart(2, '0');
     const defaultDate = `${year}-${month}-${day}`;
-    const defaultTime = '03:30';
+    const defaultTime = '01:00';
 
     // Create Modal for date/time input with defaults
     const modal = new ModalBuilder()
@@ -770,7 +770,7 @@ export class DiscordBot {
       .setCustomId('schedule_auto_send')
       .setLabel('Enable Smart Auto-Send? (yes/no)')
       .setPlaceholder('yes = monitor changes after time | no = post once at time')
-      .setValue('no')
+      .setValue('yes')
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setMinLength(2)
