@@ -14,4 +14,8 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('admin')
     .setDescription('Show Admin Controls panel'),
+
+  new SlashCommandBuilder()
+    .setName('refresh')
+    .setDescription('Refresh the last posted distribution message with latest sheet data'),
 ];

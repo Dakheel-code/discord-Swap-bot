@@ -378,6 +378,10 @@ export class DiscordBot {
           await this.handleAdmin(interaction);
           break;
 
+        case 'refresh':
+          await this.handleRefresh(interaction);
+          break;
+
         default:
           await interaction.editReply('❌ Unknown command');
       }
@@ -2808,6 +2812,137 @@ export class DiscordBot {
       content: '**Admin Controls** (Only you can see this)',
       components: this.createDistributionButtons()
     });
+  }
+
+  /**
+   * Handle /refresh command - Refresh last posted distribution message with latest sheet data
+   */
+  async handleRefresh(interaction) {
+    try {
+      // Check if there are distribution messages to refresh
+      if (!this.lastDistributionMessages || this.lastDistributionMessages.length === 0) {
+        const embed = new EmbedBuilder()
+          .setColor(0xff9900)
+          .setTitle('⚠️ No Messages to Refresh')
+          .setDescription('No distribution messages found. Please use `/swap` first to create a distribution.')
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      // Verify messages still exist
+      let messagesValid = false;
+      try {
+        await this.lastDistributionMessages[0].fetch();
+        messagesValid = true;
+      } catch (error) {
+        console.log('⚠️ Saved messages no longer exist');
+        this.lastDistributionMessages = [];
+        this.lastChannelId = null;
+        
+        const embed = new EmbedBuilder()
+          .setColor(0xff0000)
+          .setTitle('❌ Messages Not Found')
+          .setDescription('The distribution messages no longer exist. Please use `/swap` to create a new distribution.')
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      // Fetch fresh data from Google Sheets
+      console.log('🔄 Refreshing data from Google Sheets...');
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+
+      if (this.playersData.length === 0) {
+        const embed = new EmbedBuilder()
+          .setColor(0xff0000)
+          .setTitle('❌ No Data Found')
+          .setDescription('No data found in Google Sheet')
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      // Re-distribute with latest data
+      const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+      const seasonNumber = this.lastSeasonNumber || null;
+      
+      console.log(`🔄 Re-distributing with column: ${sortColumn}, season: ${seasonNumber || 'N/A'}`);
+      this.distributionManager.distribute(this.playersData, sortColumn, seasonNumber);
+
+      // Get formatted distribution
+      const formattedText = this.distributionManager.getFormattedDistribution();
+
+      // Update the messages
+      await this.updateDistributionMessages(formattedText);
+
+      // Update swapsleft messages if they exist
+      if (this.lastSwapsLeftMessages && this.lastSwapsLeftMessages.length > 0) {
+        try {
+          await this.lastSwapsLeftMessages[0].fetch();
+          const result = this.distributionManager.getSwapsLeft(false, this.swapsLeftPlayersList);
+          const swapsLeftText = result.text;
+          const maxLength = 2000;
+          const chunks = [];
+          
+          let currentChunk = '';
+          const lines = swapsLeftText.split('\n');
+          
+          for (const line of lines) {
+            if ((currentChunk + line + '\n').length > maxLength) {
+              if (currentChunk) chunks.push(currentChunk);
+              currentChunk = line + '\n';
+            } else {
+              currentChunk += line + '\n';
+            }
+          }
+          if (currentChunk) chunks.push(currentChunk);
+
+          for (let i = 0; i < Math.min(chunks.length, this.lastSwapsLeftMessages.length); i++) {
+            try {
+              await this.lastSwapsLeftMessages[i].edit(chunks[i]);
+            } catch (error) {
+              console.error(`❌ Failed to update swapsleft message ${i + 1}: ${error.message}`);
+            }
+          }
+          console.log('✅ Swaps left messages refreshed');
+        } catch (error) {
+          console.log('⚠️ Swaps left messages no longer exist');
+          this.lastSwapsLeftMessages = [];
+        }
+      }
+
+      // Success message
+      const summary = this.distributionManager.getSummary();
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff00)
+        .setTitle('✅ Distribution Refreshed')
+        .setDescription(`Updated with latest data from Google Sheets${seasonNumber ? `\nSeason: **${seasonNumber}**` : ''}`)
+        .addFields(
+          { name: '🏆 RGR', value: `${summary.groups.RGR} players`, inline: true },
+          { name: '🏆 OTL', value: `${summary.groups.OTL} players`, inline: true },
+          { name: '🏆 RND', value: `${summary.groups.RND} players`, inline: true },
+          { name: '📊 Total', value: `${summary.total} players`, inline: false },
+          { name: '🚫 Excluded', value: `${summary.excluded} players`, inline: true }
+        )
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+      console.log('✅ Distribution refresh complete');
+
+    } catch (error) {
+      console.error(`❌ Error in handleRefresh: ${error.message}`);
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('❌ Refresh Failed')
+        .setDescription(`Failed to refresh distribution.\n\n**Error:** ${error.message}`)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+    }
   }
 
   /**
