@@ -253,7 +253,7 @@ export class DiscordBot {
         return; // No changes, continue monitoring
       }
 
-      // Handle Time-based schedule
+      // Handle Time-based or Scheduled Auto-Send
       const [datePart, timePart] = this.scheduledData.datetime.split(' ');
       const [year, month, day] = datePart.split('-').map(Number);
       const [hour, minute] = timePart.split(':').map(Number);
@@ -264,9 +264,18 @@ export class DiscordBot {
       const timeDiff = scheduledDate.getTime() - now.getTime();
       
       if (timeDiff <= 0 && timeDiff > -300000) {
-        // Time has arrived! Send the post
-        console.log('🎯 Scheduled time reached! Sending distribution...');
-        await this.executeScheduledPost();
+        // Time has arrived!
+        if (this.scheduledData.autoSend) {
+          // Activate Auto-Send monitoring mode
+          console.log('🎯 Scheduled time reached! Activating Auto-Send monitoring...');
+          this.autoSendMode = true;
+          // Snapshot was already taken at schedule creation time
+          console.log('📸 Using snapshot from schedule creation time');
+        } else {
+          // Regular time-based post
+          console.log('🎯 Scheduled time reached! Sending distribution...');
+          await this.executeScheduledPost();
+        }
       } else if (timeDiff <= -300000) {
         // More than 5 minutes late - schedule missed
         console.log('⚠️ Scheduled time has passed by more than 5 minutes, cleaning up');
@@ -741,26 +750,26 @@ export class DiscordBot {
 
     const dateInput = new TextInputBuilder()
       .setCustomId('schedule_date')
-      .setLabel('Date (YYYY-MM-DD) - Leave empty for Auto-Send')
+      .setLabel('Date (YYYY-MM-DD)')
       .setValue(defaultDate)
       .setStyle(TextInputStyle.Short)
-      .setRequired(false)
+      .setRequired(true)
       .setMinLength(10)
       .setMaxLength(10);
 
     const timeInput = new TextInputBuilder()
       .setCustomId('schedule_time')
-      .setLabel('Time in UTC (HH:MM) - Leave empty for Auto-Send')
+      .setLabel('Time in UTC (HH:MM)')
       .setValue(defaultTime)
       .setStyle(TextInputStyle.Short)
-      .setRequired(false)
+      .setRequired(true)
       .setMinLength(5)
       .setMaxLength(5);
 
     const autoSendInput = new TextInputBuilder()
       .setCustomId('schedule_auto_send')
       .setLabel('Enable Smart Auto-Send? (yes/no)')
-      .setPlaceholder('Type "yes" to enable auto-send on data changes')
+      .setPlaceholder('yes = monitor changes after time | no = post once at time')
       .setValue('no')
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
@@ -1327,32 +1336,74 @@ export class DiscordBot {
       
       // Check if it's Auto-Send mode
       if (this.scheduledData.autoSend) {
-        const embed = new EmbedBuilder()
-          .setColor(0x00ff00)
-          .setTitle('🔄 Auto-Send Active')
-          .setDescription('The bot is monitoring for data changes and will auto-post when detected.')
-          .addFields(
-            { name: '📺 Channel', value: channel ? `${channel}` : 'Unknown', inline: true },
-            { name: '🔄 Check Interval', value: 'Every 5 minutes', inline: true },
-            { name: '📊 Monitored Columns', value: 'B, C, D (ignores E)', inline: false }
-          )
-          .setFooter({ text: 'Changes in Action column (E) are ignored' });
+        // Check if monitoring has started
+        if (this.autoSendMode) {
+          // Auto-Send is actively monitoring
+          const embed = new EmbedBuilder()
+            .setColor(0x00ff00)
+            .setTitle('🔄 Smart Auto-Send Active')
+            .setDescription('The bot is actively monitoring for data changes and will auto-post when detected.')
+            .addFields(
+              { name: '📺 Channel', value: channel ? `${channel}` : 'Unknown', inline: true },
+              { name: '🔄 Check Interval', value: 'Every 5 minutes', inline: true },
+              { name: '📊 Monitored Columns', value: 'B, C, D (ignores E)', inline: true },
+              { name: '📸 Baseline', value: 'Snapshot from schedule creation', inline: true }
+            )
+            .setFooter({ text: 'Changes in Action column (E) are ignored • Monitoring active' });
 
-        const buttonRow = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId('schedule_delete')
-              .setLabel('Stop Auto-Send')
-              .setEmoji('🛑')
-              .setStyle(ButtonStyle.Danger),
-            new ButtonBuilder()
-              .setCustomId('schedule_view_preview')
-              .setLabel('Preview')
-              .setEmoji('👁️')
-              .setStyle(ButtonStyle.Secondary)
-          );
+          const buttonRow = new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId('schedule_delete')
+                .setLabel('Stop Auto-Send')
+                .setEmoji('🛑')
+                .setStyle(ButtonStyle.Danger),
+              new ButtonBuilder()
+                .setCustomId('schedule_view_preview')
+                .setLabel('Preview')
+                .setEmoji('👁️')
+                .setStyle(ButtonStyle.Secondary)
+            );
 
-        await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+          await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+        } else {
+          // Scheduled Auto-Send waiting to start
+          const scheduledTime = new Date(this.scheduledData.timestamp);
+          const now = new Date();
+          const diff = scheduledTime - now;
+          
+          const hoursUntil = Math.floor(diff / 1000 / 60 / 60);
+          const minsUntil = Math.floor((diff / 1000 / 60) % 60);
+          
+          const embed = new EmbedBuilder()
+            .setColor(0xffa500)
+            .setTitle('⏰ Smart Auto-Send Scheduled')
+            .setDescription(`Monitoring will start at **${this.scheduledData.datetime} UTC**`)
+            .addFields(
+              { name: '⏰ Monitoring Starts In', value: `${hoursUntil}h ${minsUntil}m`, inline: true },
+              { name: '📺 Channel', value: channel ? `${channel}` : 'Unknown', inline: true },
+              { name: '🔄 Check Interval', value: 'Every 5 minutes', inline: true },
+              { name: '📊 Monitored Columns', value: 'B, C, D (ignores E)', inline: true },
+              { name: '📸 Baseline', value: 'Snapshot from schedule creation', inline: true }
+            )
+            .setFooter({ text: 'Comparison baseline: Data at schedule creation time' });
+
+          const buttonRow = new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId('schedule_delete')
+                .setLabel('Cancel Schedule')
+                .setEmoji('🗑️')
+                .setStyle(ButtonStyle.Danger),
+              new ButtonBuilder()
+                .setCustomId('schedule_view_preview')
+                .setLabel('Preview')
+                .setEmoji('👁️')
+                .setStyle(ButtonStyle.Secondary)
+            );
+
+          await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+        }
       } else {
         // Time-based schedule
         const scheduledTime = new Date(this.scheduledData.timestamp);
@@ -1477,45 +1528,76 @@ export class DiscordBot {
           }
         }
         
+        // Validate date and time
+        if (!date || !time) {
+          await interaction.editReply('❌ Please provide both date and time');
+          return;
+        }
+        
+        const datetime = `${date} ${time}`;
+        
         // Check if Auto-Send is enabled
         const isAutoSend = autoSendResponse === 'yes' || autoSendResponse === 'y';
         
         if (isAutoSend) {
-          // Activate Auto-Send mode
+          // Scheduled Auto-Send mode: Start monitoring at specified time
+          // IMPORTANT: Snapshot is taken NOW, not at start time
+          
+          // Parse the scheduled date for validation
+          const [datePart, timePart] = datetime.split(' ');
+          const [year, month, day] = datePart.split('-').map(Number);
+          const [hour, minute] = timePart.split(':').map(Number);
+          const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+          const now = new Date();
+          const diff = scheduledDate.getTime() - now.getTime();
+          
+          if (diff < 0) {
+            await interaction.editReply('❌ Scheduled time must be in the future');
+            return;
+          }
+          
+          const hoursUntil = Math.floor(diff / 1000 / 60 / 60);
+          const minsUntil = Math.floor((diff / 1000 / 60) % 60);
+          
+          // Create initial snapshot NOW (at schedule creation time)
+          this.playersData = await fetchPlayersDataWithDiscordNames();
+          this.dataSnapshot = this.createDataSnapshot(this.playersData);
+          console.log('📸 Created data snapshot at schedule creation time');
+          
+          // Save schedule with Auto-Send mode
           this.scheduledData = {
             channelId: channelId,
+            datetime: datetime,
+            timestamp: scheduledDate.getTime(),
             autoSend: true,
-            continuousAutoSend: true,
-            timestamp: Date.now()
+            continuousAutoSend: true
           };
           
           this.saveSchedule();
-          this.autoSendMode = true;
-          
-          // Create initial snapshot
-          this.playersData = await fetchPlayersDataWithDiscordNames();
-          this.dataSnapshot = this.createDataSnapshot(this.playersData);
+          this.autoSendMode = false; // Will be activated when time arrives
           
           const channel = await this.client.channels.fetch(channelId);
           
           const embed = new EmbedBuilder()
             .setColor(0x00ff00)
-            .setTitle('✅ Smart Auto-Send Activated')
-            .setDescription(`**Intelligent automatic posting enabled!**\n\nThe bot will automatically post distribution updates to ${channel} when data changes are detected.`)
+            .setTitle('✅ Smart Auto-Send Scheduled')
+            .setDescription(`**Intelligent monitoring will start at ${datetime} UTC**\n\nThe bot will compare data against the current snapshot and auto-post when changes are detected in ${channel}.`)
             .addFields(
+              { name: '⏰ Monitoring Starts In', value: `${hoursUntil}h ${minsUntil}m`, inline: true },
               { name: '🔄 Check Interval', value: 'Every 5 minutes', inline: true },
               { name: '📊 Monitored Columns', value: 'B, C, D (ignores E)', inline: true },
-              { name: '📺 Channel', value: `${channel}`, inline: false }
+              { name: '📺 Channel', value: `${channel}`, inline: true },
+              { name: '📸 Snapshot Taken', value: 'Now (at schedule creation)', inline: true }
             )
-            .setFooter({ text: 'Changes in Action column (E) are ignored • Smart monitoring active' })
+            .setFooter({ text: 'Comparison baseline: Current data • Monitoring starts: ' + datetime + ' UTC' })
             .setTimestamp();
           
           const buttonRow = new ActionRowBuilder()
             .addComponents(
               new ButtonBuilder()
                 .setCustomId('schedule_delete')
-                .setLabel('Stop Auto-Send')
-                .setEmoji('🛑')
+                .setLabel('Cancel Schedule')
+                .setEmoji('🗑️')
                 .setStyle(ButtonStyle.Danger),
               new ButtonBuilder()
                 .setCustomId('schedule_view_preview')
@@ -1526,16 +1608,10 @@ export class DiscordBot {
           
           await interaction.editReply({ embeds: [embed], components: [buttonRow] });
           this.pendingScheduleChannel.delete(interaction.user.id);
-          console.log('✅ Smart Auto-Send mode activated via modal');
+          console.log(`✅ Scheduled Auto-Send mode: monitoring starts at ${datetime}, snapshot taken now`);
           
         } else {
-          // Time-based schedule
-          if (!date || !time) {
-            await interaction.editReply('❌ Please provide both date and time, or enable Auto-Send');
-            return;
-          }
-          
-          const datetime = `${date} ${time}`;
+          // Regular time-based schedule (post once)
           const result = await this.processScheduleCreation(interaction, datetime, channelId);
           
           if (result.success) {
