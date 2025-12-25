@@ -432,9 +432,32 @@ export class DiscordBot {
         await interaction.deferReply({ ephemeral: true });
         const formattedText = this.distributionManager.getFormattedDistribution();
         if (formattedText && formattedText.length > 50) {
-          const maxLength = 2000;
-          const preview = formattedText.length > maxLength ? formattedText.substring(0, maxLength - 50) + '\n\n... (truncated)' : formattedText;
-          await interaction.editReply({ content: '**Preview:**\n\n' + preview });
+          const header = '**Preview:**\n\n';
+          const maxLength = 2000 - header.length;
+          const chunks = [];
+          let currentChunk = '';
+          const lines = formattedText.split('\n');
+          
+          for (const line of lines) {
+            if ((currentChunk + line + '\n').length > maxLength) {
+              if (currentChunk) chunks.push(currentChunk);
+              currentChunk = line + '\n';
+            } else {
+              currentChunk += line + '\n';
+            }
+          }
+          if (currentChunk) chunks.push(currentChunk);
+          
+          // Send first chunk with header
+          await interaction.editReply({ content: header + chunks[0] });
+          
+          // Send remaining chunks as followUp
+          for (let i = 1; i < chunks.length; i++) {
+            await interaction.followUp({ 
+              content: chunks[i], 
+              ephemeral: true 
+            });
+          }
         } else {
           await interaction.editReply('⚠️ No distribution data. Run /swap first.');
         }
