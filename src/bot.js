@@ -28,6 +28,8 @@ export class DiscordBot {
     this.pendingScheduleChannel = new Map(); // Store pending channel selection for schedule (userId -> channelId)
     this.lastSelectedPlayers = new Map(); // Store last selected players for mark done (userId -> [identifiers])
     this.swapsLeftPlayersList = []; // Store players shown in last Swaps Left message
+    this.dataSnapshot = null; // Store snapshot of sheet data for auto-send comparison
+    this.autoSendMode = false; // Track if auto-send mode is active
   }
 
   /**
@@ -206,7 +208,7 @@ export class DiscordBot {
 
   /**
    * Start schedule checker interval
-   * Checks every minute if it's time to send scheduled post
+   * Checks every 5 minutes for scheduled posts and auto-send mode
    */
   startScheduleChecker() {
     // Clear existing interval if any
@@ -214,16 +216,17 @@ export class DiscordBot {
       clearInterval(this.scheduleCheckInterval);
     }
 
-    // Check every 30 seconds
+    // Check every 5 minutes (300000 ms)
     this.scheduleCheckInterval = setInterval(async () => {
       await this.checkAndExecuteSchedule();
-    }, 30000); // 30 seconds
+    }, 300000); // 5 minutes
 
-    console.log('⏰ Schedule checker started (checks every 30 seconds)');
+    console.log('⏰ Schedule checker started (checks every 5 minutes)');
   }
 
   /**
    * Check if scheduled time has arrived and execute if needed
+   * Also checks for auto-send mode (data changes)
    */
   async checkAndExecuteSchedule() {
     try {
@@ -233,33 +236,95 @@ export class DiscordBot {
         if (fs.existsSync(this.scheduleFilePath)) {
           const data = JSON.parse(fs.readFileSync(this.scheduleFilePath, 'utf8'));
           this.scheduledData = data;
+          this.autoSendMode = data.autoSend || false;
         } else {
           return; // No schedule
         }
       }
 
-      // Parse the scheduled date
+      // Handle Auto-Send mode (check for data changes)
+      if (this.autoSendMode) {
+        const hasChanges = await this.checkForDataChanges();
+        if (hasChanges) {
+          console.log('🔄 Auto-Send: Data changes detected! Sending distribution...');
+          await this.executeScheduledPost();
+          return;
+        }
+        return; // No changes, continue monitoring
+      }
+
+      // Handle Time-based schedule
       const [datePart, timePart] = this.scheduledData.datetime.split(' ');
       const [year, month, day] = datePart.split('-').map(Number);
       const [hour, minute] = timePart.split(':').map(Number);
       const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
       const now = new Date();
 
-      // Check if it's time to send (within 1 minute window)
+      // Check if it's time to send (within 5 minute window for 5-min polling)
       const timeDiff = scheduledDate.getTime() - now.getTime();
       
-      if (timeDiff <= 0 && timeDiff > -60000) {
+      if (timeDiff <= 0 && timeDiff > -300000) {
         // Time has arrived! Send the post
         console.log('🎯 Scheduled time reached! Sending distribution...');
         await this.executeScheduledPost();
-      } else if (timeDiff <= -60000) {
-        // More than 1 minute late - schedule missed
-        console.log('⚠️ Scheduled time has passed by more than 1 minute, cleaning up');
+      } else if (timeDiff <= -300000) {
+        // More than 5 minutes late - schedule missed
+        console.log('⚠️ Scheduled time has passed by more than 5 minutes, cleaning up');
         this.deleteSchedule();
       }
     } catch (error) {
       console.error('❌ Error in schedule checker:', error);
     }
+  }
+
+  /**
+   * Check for data changes in Google Sheets (for auto-send mode)
+   * Compares columns B, C, D only (ignores column E - Action)
+   */
+  async checkForDataChanges() {
+    try {
+      // Fetch current data
+      const currentData = await fetchPlayersDataWithDiscordNames();
+      
+      // If no snapshot exists, create one and return false (no changes yet)
+      if (!this.dataSnapshot) {
+        this.dataSnapshot = this.createDataSnapshot(currentData);
+        console.log('📸 Created initial data snapshot');
+        return false;
+      }
+
+      // Create snapshot of current data
+      const currentSnapshot = this.createDataSnapshot(currentData);
+      
+      // Compare snapshots
+      const hasChanges = JSON.stringify(this.dataSnapshot) !== JSON.stringify(currentSnapshot);
+      
+      if (hasChanges) {
+        console.log('🔄 Data changes detected in columns B, C, or D');
+        // Update snapshot for next comparison
+        this.dataSnapshot = currentSnapshot;
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('❌ Error checking for data changes:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Create a snapshot of data (columns B, C, D only - ignore E)
+   * Returns simplified data structure for comparison
+   */
+  createDataSnapshot(data) {
+    return data.map(player => ({
+      name: player.Name || player.Player || '',
+      discordName: player['Discord-Name'] || player.DiscordName || '',
+      trophies: player.Trophies || 0,
+      clan: player.Clan || ''
+      // Intentionally excluding Action column (E)
+    }));
   }
 
   /**
@@ -292,9 +357,16 @@ export class DiscordBot {
         await channel.send('❌ Error: No distribution data available. Please run /swap first.');
       }
 
-      // Clean up after sending
-      this.deleteSchedule();
-      this.scheduledPost = null;
+      // Clean up after sending (only if not in continuous auto-send mode)
+      if (!this.scheduledData.continuousAutoSend) {
+        this.deleteSchedule();
+        this.scheduledPost = null;
+        this.autoSendMode = false;
+        this.dataSnapshot = null;
+      } else {
+        // Update snapshot for next check
+        this.dataSnapshot = this.createDataSnapshot(this.playersData);
+      }
     } catch (error) {
       console.error('❌ Error sending scheduled post:', error);
       try {
@@ -418,12 +490,20 @@ export class DiscordBot {
       // Handle schedule delete
       if (customId === 'schedule_delete') {
         this.scheduledData = null;
+        this.autoSendMode = false;
+        this.dataSnapshot = null;
         this.deleteSchedule();
         await interaction.update({ 
           content: '✅ Schedule deleted successfully', 
           embeds: [], 
           components: [] 
         });
+        return;
+      }
+      
+      // Handle Auto-Send button
+      if (customId === 'schedule_auto_send') {
+        await this.handleAutoSendButton(interaction);
         return;
       }
       
@@ -1237,59 +1317,89 @@ export class DiscordBot {
     
     // Check if schedule exists
     if (this.scheduledData) {
-      // Show existing schedule with management options
-      const scheduledTime = new Date(this.scheduledData.timestamp);
-      const now = new Date();
-      const diff = scheduledTime - now;
-      
-      let timeStatus;
-      let color;
-      
-      if (diff > 0) {
-        const hoursUntil = Math.floor(diff / 1000 / 60 / 60);
-        const minsUntil = Math.floor((diff / 1000 / 60) % 60);
-        timeStatus = `${hoursUntil}h ${minsUntil}m remaining`;
-        color = 0x00ff00;
-      } else {
-        const hoursAgo = Math.floor(Math.abs(diff) / 1000 / 60 / 60);
-        const minsAgo = Math.floor((Math.abs(diff) / 1000 / 60) % 60);
-        timeStatus = `${hoursAgo}h ${minsAgo}m ago (pending execution)`;
-        color = 0xffa500;
-      }
-      
       const channel = await this.client.channels.fetch(this.scheduledData.channelId).catch(() => null);
       
-      const embed = new EmbedBuilder()
-        .setColor(color)
-        .setTitle('📅 Swap Schedule')
-        .setDescription('You have an active schedule:')
-        .addFields(
-          { name: '📺 Channel', value: channel ? `${channel}` : 'Unknown', inline: true },
-          { name: '⏰ Date & Time (UTC)', value: this.scheduledData.datetime, inline: true },
-          { name: '⏳ Status', value: timeStatus, inline: false }
-        )
-        .setFooter({ text: 'Use the buttons below to manage your schedule' });
+      // Check if it's Auto-Send mode
+      if (this.scheduledData.autoSend) {
+        const embed = new EmbedBuilder()
+          .setColor(0x00ff00)
+          .setTitle('🔄 Auto-Send Active')
+          .setDescription('The bot is monitoring for data changes and will auto-post when detected.')
+          .addFields(
+            { name: '📺 Channel', value: channel ? `${channel}` : 'Unknown', inline: true },
+            { name: '🔄 Check Interval', value: 'Every 5 minutes', inline: true },
+            { name: '📊 Monitored Columns', value: 'B, C, D (ignores E)', inline: false }
+          )
+          .setFooter({ text: 'Changes in Action column (E) are ignored' });
 
-      const buttonRow = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId('schedule_edit')
-            .setLabel('Edit')
-            .setEmoji('✏️')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('schedule_delete')
-            .setLabel('Delete')
-            .setEmoji('🗑️')
-            .setStyle(ButtonStyle.Danger),
-          new ButtonBuilder()
-            .setCustomId('schedule_view_preview')
-            .setLabel('Preview')
-            .setEmoji('👁️')
-            .setStyle(ButtonStyle.Secondary)
-        );
+        const buttonRow = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId('schedule_delete')
+              .setLabel('Stop Auto-Send')
+              .setEmoji('🛑')
+              .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+              .setCustomId('schedule_view_preview')
+              .setLabel('Preview')
+              .setEmoji('👁️')
+              .setStyle(ButtonStyle.Secondary)
+          );
 
-      await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+        await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+      } else {
+        // Time-based schedule
+        const scheduledTime = new Date(this.scheduledData.timestamp);
+        const now = new Date();
+        const diff = scheduledTime - now;
+        
+        let timeStatus;
+        let color;
+        
+        if (diff > 0) {
+          const hoursUntil = Math.floor(diff / 1000 / 60 / 60);
+          const minsUntil = Math.floor((diff / 1000 / 60) % 60);
+          timeStatus = `${hoursUntil}h ${minsUntil}m remaining`;
+          color = 0x00ff00;
+        } else {
+          const hoursAgo = Math.floor(Math.abs(diff) / 1000 / 60 / 60);
+          const minsAgo = Math.floor((Math.abs(diff) / 1000 / 60) % 60);
+          timeStatus = `${hoursAgo}h ${minsAgo}m ago (pending execution)`;
+          color = 0xffa500;
+        }
+        
+        const embed = new EmbedBuilder()
+          .setColor(color)
+          .setTitle('📅 Swap Schedule')
+          .setDescription('You have an active schedule:')
+          .addFields(
+            { name: '📺 Channel', value: channel ? `${channel}` : 'Unknown', inline: true },
+            { name: '⏰ Date & Time (UTC)', value: this.scheduledData.datetime, inline: true },
+            { name: '⏳ Status', value: timeStatus, inline: false }
+          )
+          .setFooter({ text: 'Use the buttons below to manage your schedule' });
+
+        const buttonRow = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId('schedule_edit')
+              .setLabel('Edit')
+              .setEmoji('✏️')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId('schedule_delete')
+              .setLabel('Delete')
+              .setEmoji('🗑️')
+              .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+              .setCustomId('schedule_view_preview')
+              .setLabel('Preview')
+              .setEmoji('👁️')
+              .setStyle(ButtonStyle.Secondary)
+          );
+
+        await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+      }
     } else {
       // Show schedule creation UI
       const channelSelect = new ChannelSelectMenuBuilder()
@@ -1307,6 +1417,11 @@ export class DiscordBot {
             .setEmoji('📅')
             .setStyle(ButtonStyle.Primary),
           new ButtonBuilder()
+            .setCustomId('schedule_auto_send')
+            .setLabel('Auto-Send on Changes')
+            .setEmoji('🔄')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
             .setCustomId('schedule_cancel')
             .setLabel('Cancel')
             .setStyle(ButtonStyle.Secondary)
@@ -1315,16 +1430,107 @@ export class DiscordBot {
       const embed = new EmbedBuilder()
         .setColor(0x5865F2)
         .setTitle('📅 Schedule Swap')
-        .setDescription('**Step 1:** Select a channel\n**Step 2:** Click "Set Date & Time"')
+        .setDescription('**Option 1:** Set specific date & time\n**Option 2:** Auto-send when sheet data changes\n\n**Step 1:** Select a channel\n**Step 2:** Choose scheduling method')
         .addFields(
           { name: '📺 Channel', value: '_Not selected_', inline: true },
-          { name: '⏰ Date & Time', value: '_Not set_', inline: true }
+          { name: '⏰ Mode', value: '_Not set_', inline: true }
         )
-        .setFooter({ text: 'All times are in UTC • Default: Tomorrow 03:30' });
+        .setFooter({ text: 'Auto-Send checks every 5 minutes for changes in columns B, C, D' });
 
       await interaction.editReply({
         embeds: [embed],
         components: [channelRow, buttonRow]
+      });
+    }
+  }
+
+  /**
+   * Handle Auto-Send button - activate auto-send mode
+   */
+  async handleAutoSendButton(interaction) {
+    await interaction.deferUpdate();
+    
+    // Get the stored channel
+    const channelId = this.pendingScheduleChannel.get(interaction.user.id);
+    
+    if (!channelId) {
+      await interaction.followUp({ 
+        content: '❌ Please select a channel first', 
+        ephemeral: true 
+      });
+      return;
+    }
+    
+    try {
+      // Auto-run swap if no data exists
+      if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
+        this.playersData = await fetchPlayersDataWithDiscordNames();
+        if (this.playersData && this.playersData.length > 0) {
+          this.distributionManager.distribute(this.playersData);
+          console.log('📊 Auto-distributed players for auto-send');
+        }
+      }
+      
+      // Create schedule data for auto-send mode
+      this.scheduledData = {
+        channelId: channelId,
+        autoSend: true,
+        continuousAutoSend: true,
+        timestamp: Date.now()
+      };
+      
+      // Save to file
+      this.saveSchedule();
+      
+      // Set auto-send mode
+      this.autoSendMode = true;
+      
+      // Create initial snapshot
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+      this.dataSnapshot = this.createDataSnapshot(this.playersData);
+      
+      const channel = await this.client.channels.fetch(channelId);
+      
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff00)
+        .setTitle('✅ Auto-Send Activated')
+        .setDescription(`The bot will automatically post distribution updates to ${channel} when data changes are detected.`)
+        .addFields(
+          { name: '🔄 Check Interval', value: 'Every 5 minutes', inline: true },
+          { name: '📊 Monitored Columns', value: 'B, C, D (ignores E)', inline: true },
+          { name: '📺 Channel', value: `${channel}`, inline: false }
+        )
+        .setFooter({ text: 'Changes in Action column (E) are ignored' })
+        .setTimestamp();
+      
+      const buttonRow = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId('schedule_delete')
+            .setLabel('Stop Auto-Send')
+            .setEmoji('🛑')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId('schedule_view_preview')
+            .setLabel('Preview')
+            .setEmoji('👁️')
+            .setStyle(ButtonStyle.Secondary)
+        );
+      
+      await interaction.editReply({ 
+        embeds: [embed], 
+        components: [buttonRow] 
+      });
+      
+      // Clean up
+      this.pendingScheduleChannel.delete(interaction.user.id);
+      
+      console.log('✅ Auto-Send mode activated');
+    } catch (error) {
+      console.error('❌ Error activating auto-send:', error);
+      await interaction.followUp({ 
+        content: `❌ Failed to activate auto-send: ${error.message}`, 
+        ephemeral: true 
       });
     }
   }
