@@ -501,11 +501,6 @@ export class DiscordBot {
         return;
       }
       
-      // Handle Auto-Send button
-      if (customId === 'schedule_auto_send') {
-        await this.handleAutoSendButton(interaction);
-        return;
-      }
       
       // Handle schedule preview
       if (customId === 'schedule_view_preview') {
@@ -746,26 +741,37 @@ export class DiscordBot {
 
     const dateInput = new TextInputBuilder()
       .setCustomId('schedule_date')
-      .setLabel('Date (YYYY-MM-DD)')
+      .setLabel('Date (YYYY-MM-DD) - Leave empty for Auto-Send')
       .setValue(defaultDate)
       .setStyle(TextInputStyle.Short)
-      .setRequired(true)
+      .setRequired(false)
       .setMinLength(10)
       .setMaxLength(10);
 
     const timeInput = new TextInputBuilder()
       .setCustomId('schedule_time')
-      .setLabel('Time in UTC (HH:MM)')
+      .setLabel('Time in UTC (HH:MM) - Leave empty for Auto-Send')
       .setValue(defaultTime)
       .setStyle(TextInputStyle.Short)
-      .setRequired(true)
+      .setRequired(false)
       .setMinLength(5)
       .setMaxLength(5);
 
+    const autoSendInput = new TextInputBuilder()
+      .setCustomId('schedule_auto_send')
+      .setLabel('Enable Smart Auto-Send? (yes/no)')
+      .setPlaceholder('Type "yes" to enable auto-send on data changes')
+      .setValue('no')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMinLength(2)
+      .setMaxLength(3);
+
     const dateRow = new ActionRowBuilder().addComponents(dateInput);
     const timeRow = new ActionRowBuilder().addComponents(timeInput);
+    const autoSendRow = new ActionRowBuilder().addComponents(autoSendInput);
 
-    modal.addComponents(dateRow, timeRow);
+    modal.addComponents(dateRow, timeRow, autoSendRow);
 
     await interaction.showModal(modal);
   }
@@ -1413,14 +1419,9 @@ export class DiscordBot {
         .addComponents(
           new ButtonBuilder()
             .setCustomId('schedule_set_time')
-            .setLabel('Set Date & Time')
+            .setLabel('Set Schedule')
             .setEmoji('📅')
             .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('schedule_auto_send')
-            .setLabel('Auto-Send on Changes')
-            .setEmoji('🔄')
-            .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId('schedule_cancel')
             .setLabel('Cancel')
@@ -1430,12 +1431,12 @@ export class DiscordBot {
       const embed = new EmbedBuilder()
         .setColor(0x5865F2)
         .setTitle('📅 Schedule Swap')
-        .setDescription('**Option 1:** Set specific date & time\n**Option 2:** Auto-send when sheet data changes\n\n**Step 1:** Select a channel\n**Step 2:** Choose scheduling method')
+        .setDescription('**Step 1:** ✅ Select a channel\n**Step 2:** Click "Set Schedule" to choose time-based or auto-send mode')
         .addFields(
           { name: '📺 Channel', value: '_Not selected_', inline: true },
-          { name: '⏰ Mode', value: '_Not set_', inline: true }
+          { name: '⏰ Schedule Type', value: '_Not set_', inline: true }
         )
-        .setFooter({ text: 'Auto-Send checks every 5 minutes for changes in columns B, C, D' });
+        .setFooter({ text: 'You can choose between time-based scheduling or smart auto-send in the next step' });
 
       await interaction.editReply({
         embeds: [embed],
@@ -1444,96 +1445,6 @@ export class DiscordBot {
     }
   }
 
-  /**
-   * Handle Auto-Send button - activate auto-send mode
-   */
-  async handleAutoSendButton(interaction) {
-    await interaction.deferUpdate();
-    
-    // Get the stored channel
-    const channelId = this.pendingScheduleChannel.get(interaction.user.id);
-    
-    if (!channelId) {
-      await interaction.followUp({ 
-        content: '❌ Please select a channel first', 
-        ephemeral: true 
-      });
-      return;
-    }
-    
-    try {
-      // Auto-run swap if no data exists
-      if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
-        this.playersData = await fetchPlayersDataWithDiscordNames();
-        if (this.playersData && this.playersData.length > 0) {
-          this.distributionManager.distribute(this.playersData);
-          console.log('📊 Auto-distributed players for auto-send');
-        }
-      }
-      
-      // Create schedule data for auto-send mode
-      this.scheduledData = {
-        channelId: channelId,
-        autoSend: true,
-        continuousAutoSend: true,
-        timestamp: Date.now()
-      };
-      
-      // Save to file
-      this.saveSchedule();
-      
-      // Set auto-send mode
-      this.autoSendMode = true;
-      
-      // Create initial snapshot
-      this.playersData = await fetchPlayersDataWithDiscordNames();
-      this.dataSnapshot = this.createDataSnapshot(this.playersData);
-      
-      const channel = await this.client.channels.fetch(channelId);
-      
-      const embed = new EmbedBuilder()
-        .setColor(0x00ff00)
-        .setTitle('✅ Auto-Send Activated')
-        .setDescription(`The bot will automatically post distribution updates to ${channel} when data changes are detected.`)
-        .addFields(
-          { name: '🔄 Check Interval', value: 'Every 5 minutes', inline: true },
-          { name: '📊 Monitored Columns', value: 'B, C, D (ignores E)', inline: true },
-          { name: '📺 Channel', value: `${channel}`, inline: false }
-        )
-        .setFooter({ text: 'Changes in Action column (E) are ignored' })
-        .setTimestamp();
-      
-      const buttonRow = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId('schedule_delete')
-            .setLabel('Stop Auto-Send')
-            .setEmoji('🛑')
-            .setStyle(ButtonStyle.Danger),
-          new ButtonBuilder()
-            .setCustomId('schedule_view_preview')
-            .setLabel('Preview')
-            .setEmoji('👁️')
-            .setStyle(ButtonStyle.Secondary)
-        );
-      
-      await interaction.editReply({ 
-        embeds: [embed], 
-        components: [buttonRow] 
-      });
-      
-      // Clean up
-      this.pendingScheduleChannel.delete(interaction.user.id);
-      
-      console.log('✅ Auto-Send mode activated');
-    } catch (error) {
-      console.error('❌ Error activating auto-send:', error);
-      await interaction.followUp({ 
-        content: `❌ Failed to activate auto-send: ${error.message}`, 
-        ephemeral: true 
-      });
-    }
-  }
 
   /**
    * Handle Modal submissions
@@ -1545,21 +1456,20 @@ export class DiscordBot {
       if (customId === 'schedule_datetime_modal') {
         await interaction.deferReply({ ephemeral: true });
         
-        const date = interaction.fields.getTextInputValue('schedule_date');
-        const time = interaction.fields.getTextInputValue('schedule_time');
-        const datetime = `${date} ${time}`;
+        const date = interaction.fields.getTextInputValue('schedule_date').trim();
+        const time = interaction.fields.getTextInputValue('schedule_time').trim();
+        const autoSendResponse = interaction.fields.getTextInputValue('schedule_auto_send').trim().toLowerCase();
         
         // Get the stored channel
         const channelId = this.pendingScheduleChannel.get(interaction.user.id);
         
         if (!channelId) {
-          await interaction.editReply('❌ Channel not found. Please start over with /schedule create');
+          await interaction.editReply('❌ Channel not found. Please start over');
           return;
         }
         
         // Auto-run swap if no data exists
         if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
-          // Fetch and distribute players automatically
           this.playersData = await fetchPlayersDataWithDiscordNames();
           if (this.playersData && this.playersData.length > 0) {
             this.distributionManager.distribute(this.playersData);
@@ -1567,38 +1477,94 @@ export class DiscordBot {
           }
         }
         
-        // Process the schedule
-        const result = await this.processScheduleCreation(interaction, datetime, channelId);
+        // Check if Auto-Send is enabled
+        const isAutoSend = autoSendResponse === 'yes' || autoSendResponse === 'y';
         
-        if (result.success) {
+        if (isAutoSend) {
+          // Activate Auto-Send mode
+          this.scheduledData = {
+            channelId: channelId,
+            autoSend: true,
+            continuousAutoSend: true,
+            timestamp: Date.now()
+          };
+          
+          this.saveSchedule();
+          this.autoSendMode = true;
+          
+          // Create initial snapshot
+          this.playersData = await fetchPlayersDataWithDiscordNames();
+          this.dataSnapshot = this.createDataSnapshot(this.playersData);
+          
           const channel = await this.client.channels.fetch(channelId);
           
           const embed = new EmbedBuilder()
             .setColor(0x00ff00)
-            .setTitle('✅ Swap Scheduled')
-            .setDescription(`The swap will be posted in ${channel} at **${datetime} UTC**`)
+            .setTitle('✅ Smart Auto-Send Activated')
+            .setDescription(`**Intelligent automatic posting enabled!**\n\nThe bot will automatically post distribution updates to ${channel} when data changes are detected.`)
             .addFields(
-              { name: '⏰ Time Until Post', value: `${result.hoursUntil}h ${result.minsUntil}m`, inline: true },
-              { name: '📺 Channel', value: `${channel}`, inline: true }
+              { name: '🔄 Check Interval', value: 'Every 5 minutes', inline: true },
+              { name: '📊 Monitored Columns', value: 'B, C, D (ignores E)', inline: true },
+              { name: '📺 Channel', value: `${channel}`, inline: false }
             )
-            .setFooter({ text: 'The schedule checker runs every 30 seconds to ensure delivery' })
+            .setFooter({ text: 'Changes in Action column (E) are ignored • Smart monitoring active' })
             .setTimestamp();
-
-          // Add preview button
+          
           const buttonRow = new ActionRowBuilder()
             .addComponents(
               new ButtonBuilder()
+                .setCustomId('schedule_delete')
+                .setLabel('Stop Auto-Send')
+                .setEmoji('🛑')
+                .setStyle(ButtonStyle.Danger),
+              new ButtonBuilder()
                 .setCustomId('schedule_view_preview')
-                .setLabel('👁️ Preview Message')
+                .setLabel('Preview')
+                .setEmoji('👁️')
                 .setStyle(ButtonStyle.Secondary)
             );
-
-          await interaction.editReply({ embeds: [embed], components: [buttonRow] });
           
-          // Clean up
+          await interaction.editReply({ embeds: [embed], components: [buttonRow] });
           this.pendingScheduleChannel.delete(interaction.user.id);
+          console.log('✅ Smart Auto-Send mode activated via modal');
+          
         } else {
-          await interaction.editReply(`❌ ${result.error}`);
+          // Time-based schedule
+          if (!date || !time) {
+            await interaction.editReply('❌ Please provide both date and time, or enable Auto-Send');
+            return;
+          }
+          
+          const datetime = `${date} ${time}`;
+          const result = await this.processScheduleCreation(interaction, datetime, channelId);
+          
+          if (result.success) {
+            const channel = await this.client.channels.fetch(channelId);
+            
+            const embed = new EmbedBuilder()
+              .setColor(0x00ff00)
+              .setTitle('✅ Swap Scheduled')
+              .setDescription(`The swap will be posted in ${channel} at **${datetime} UTC**`)
+              .addFields(
+                { name: '⏰ Time Until Post', value: `${result.hoursUntil}h ${result.minsUntil}m`, inline: true },
+                { name: '📺 Channel', value: `${channel}`, inline: true }
+              )
+              .setFooter({ text: 'The schedule checker runs every 5 minutes to ensure delivery' })
+              .setTimestamp();
+
+            const buttonRow = new ActionRowBuilder()
+              .addComponents(
+                new ButtonBuilder()
+                  .setCustomId('schedule_view_preview')
+                  .setLabel('👁️ Preview Message')
+                  .setStyle(ButtonStyle.Secondary)
+              );
+
+            await interaction.editReply({ embeds: [embed], components: [buttonRow] });
+            this.pendingScheduleChannel.delete(interaction.user.id);
+          } else {
+            await interaction.editReply(`❌ ${result.error}`);
+          }
         }
       }
       
