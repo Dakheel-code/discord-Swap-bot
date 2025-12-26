@@ -514,6 +514,10 @@ export class DistributionManager {
     // Header with season number
     // Use custom season number if provided, otherwise use config
     const seasonNum = parseInt(this.customSeasonNumber || config.seasonNumber) || 156;
+    const escapeMd = (value) => {
+      if (value === null || value === undefined) return '';
+      return String(value).replace(/[\\`*_~|]/g, '\\$&');
+    };
     let output = `**# :RGR: SWAP LIST SEASON ${seasonNum} :RGR:**\n\n`;
 
     // Display main groups with "to" prefix and player count
@@ -531,7 +535,7 @@ export class DistributionManager {
         players.forEach((player, index) => {
           // Get Discord mention and original name
           const discordMention = player.DiscordName || '';
-          const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
+          const originalName = escapeMd(player.OriginalName || player.Name || player.Player || player.USERNAME || '');
           
           const identifier = this.getPlayerIdentifier(player);
           
@@ -574,7 +578,7 @@ export class DistributionManager {
               line += ` • ${originalName}`;
             }
           } else {
-            const displayName = originalName || this.getPlayerName(player);
+            const displayName = originalName || escapeMd(this.getPlayerName(player));
             line += displayName;
           }
           
@@ -608,7 +612,7 @@ export class DistributionManager {
       this.groups.WILDCARDS.forEach((player, index) => {
         // Get Discord mention and original name
         const discordMention = player.DiscordName || '';
-        const originalName = player.OriginalName || player.Name || player.Player || player.USERNAME || '';
+        const originalName = escapeMd(player.OriginalName || player.Name || player.Player || player.USERNAME || '');
         
         const identifier = this.getPlayerIdentifier(player);
         
@@ -641,7 +645,7 @@ export class DistributionManager {
             line += ` •${originalName}•`;
           }
         } else {
-          const displayName = originalName || this.getPlayerName(player);
+          const displayName = originalName || escapeMd(this.getPlayerName(player));
           line += `•${displayName}•`;
         }
         
