@@ -3117,12 +3117,21 @@ export class DiscordBot {
       console.log(`✅ Swaps left list sent (${this.lastSwapsLeftMessages.length} messages)`);
       
       // Send DMs to remaining players (only those not marked as done)
+      console.log(`📨 Starting DM sending process...`);
+      console.log(`📊 Players list length: ${playersList.length}`);
+      
       let dmsSent = 0;
       let dmsFailed = 0;
+      let skippedDone = 0;
+      let skippedNoId = 0;
       
       for (const player of playersList) {
+        console.log(`🔍 Processing player: ${player.name}, isDone: ${player.isDone}, mention: ${player.mention}`);
+        
         // Skip if player is already done
         if (player.isDone) {
+          skippedDone++;
+          console.log(`⏭️ Skipping ${player.name} - already done`);
           continue;
         }
         
@@ -3132,15 +3141,20 @@ export class DiscordBot {
           const match = player.mention.match(/<@(\d+)>/);
           if (match) {
             userId = match[1];
+            console.log(`✅ Found Discord ID for ${player.name}: ${userId}`);
+          } else {
+            console.warn(`⚠️ Mention exists but no ID found: ${player.mention}`);
           }
         }
         
         if (!userId) {
+          skippedNoId++;
           console.warn(`⚠️ No Discord ID found for player: ${player.name}`);
           continue;
         }
         
         try {
+          console.log(`📤 Attempting to send DM to ${player.name} (${userId})...`);
           const user = await this.client.users.fetch(userId);
           
           // Create DM message
@@ -3158,7 +3172,7 @@ export class DiscordBot {
         }
       }
       
-      console.log(`📨 DM Summary: ${dmsSent} sent, ${dmsFailed} failed`);
+      console.log(`📨 DM Summary: ${dmsSent} sent, ${dmsFailed} failed, ${skippedDone} skipped (done), ${skippedNoId} skipped (no ID)`);
     } catch (error) {
       console.error(`❌ Error in handleSwapsLeft: ${error.message}`);
       const embed = new EmbedBuilder()
