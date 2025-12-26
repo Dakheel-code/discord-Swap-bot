@@ -581,15 +581,11 @@ export class DiscordBot {
         await this.sendLongMessage(channel, formattedText, true, true);
         console.log(`✅ Scheduled post sent to ${channel.name}`);
         
-        // Send notification about the scheduled post to multiple channels
+        // Send notification about the scheduled post to the channel where scheduling was initiated
         const creationChannelId = this.scheduledData.creationChannelId || this.scheduledData.channelId;
-        const secondNotificationChannelId = this.scheduledData.secondNotificationChannelId || null;
         
         // Prepare notification channels list
         const notificationChannelIds = [creationChannelId];
-        if (secondNotificationChannelId) {
-          notificationChannelIds.push(secondNotificationChannelId);
-        }
         
         // Prepare notification embed
         const rgrCount = this.distributionManager.groups.RGR?.length || 0;
@@ -1854,7 +1850,6 @@ export class DiscordBot {
           this.scheduledData = {
             channelId: channelId,
             creationChannelId: interaction.channel.id,
-            secondNotificationChannelId: '984981028454162492',
             datetime: datetime,
             timestamp: scheduledDate.getTime(),
             autoSend: true,
@@ -2989,7 +2984,6 @@ export class DiscordBot {
         datetime: datetime,
         channelId: channelId,
         creationChannelId: interaction.channel.id,
-        secondNotificationChannelId: '984981028454162492',
         timestamp: scheduledDate.getTime()
       };
       this.saveSchedule();
