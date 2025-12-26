@@ -361,6 +361,31 @@ export class DiscordBot {
       if (formattedText && formattedText.length > 50) {
         await this.sendLongMessage(channel, formattedText, true, true);
         console.log(`✅ Scheduled post sent to ${channel.name}`);
+        
+        // Send notification about the scheduled post
+        const rgrCount = this.distributionManager.groups.RGR?.length || 0;
+        const otlCount = this.distributionManager.groups.OTL?.length || 0;
+        const rndCount = this.distributionManager.groups.RND?.length || 0;
+        const wildcardsCount = this.distributionManager.groups.WILDCARDS?.length || 0;
+        const totalPlayers = this.playersData.length;
+        
+        const notificationEmbed = new EmbedBuilder()
+          .setColor(0x00ff00)
+          .setTitle('✅ Scheduled Distribution Sent')
+          .setDescription(`The scheduled swap distribution has been posted successfully!`)
+          .addFields(
+            { name: '📊 Total Players', value: `${totalPlayers}`, inline: true },
+            { name: '🔴 RGR', value: `${rgrCount} players`, inline: true },
+            { name: '🟡 OTL', value: `${otlCount} players`, inline: true },
+            { name: '🟢 RND', value: `${rndCount} players`, inline: true },
+            { name: '⭐ WILDCARDS', value: `${wildcardsCount} players`, inline: true },
+            { name: '📅 Sent At', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+          )
+          .setFooter({ text: this.autoSendMode ? 'Auto-Send Mode: Monitoring continues' : 'Scheduled post completed' })
+          .setTimestamp();
+        
+        await channel.send({ embeds: [notificationEmbed] });
+        console.log('📢 Notification sent about scheduled post');
       } else {
         console.error('❌ No distribution data to send');
         await channel.send('❌ Error: No distribution data available. Please run /swap first.');
