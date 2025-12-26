@@ -714,7 +714,7 @@ export class DistributionManager {
       
       const remainingCount = totalCount - doneCount;
       if (remainingCount === 0) {
-        output = '**SWAPS COMPLETED**\n';
+        output = ' -\n\n**SWAPS COMPLETED**';
         return { text: output, players: specificPlayers };
       } else {
         output += `Total players remaining: **${remainingCount}** / ${totalCount}\n\n`;
@@ -838,7 +838,7 @@ export class DistributionManager {
     // Format output
     const remainingCount = totalCount - doneCount;
     if (remainingCount === 0 && totalCount > 0) {
-      output = '**SWAPS COMPLETED**\n';
+      output = ' -\n\n**SWAPS COMPLETED**';
       return { text: output, players: allPlayers };
     } else {
       output += `Total players remaining: **${remainingCount}** / ${totalCount}\n\n`;
