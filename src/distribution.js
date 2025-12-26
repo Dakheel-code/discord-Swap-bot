@@ -717,12 +717,7 @@ export class DistributionManager {
       });
       
       const remainingCount = totalCount - doneCount;
-      if (remainingCount === 0) {
-        output = ' -\n\n**SWAPS COMPLETED**';
-        return { text: output, players: specificPlayers };
-      } else {
-        output += `Total players remaining: **${remainingCount}** / ${totalCount}\n\n`;
-      }
+      output += `Total players remaining: **${remainingCount}** / ${totalCount}\n\n`;
       
       specificPlayers.forEach(player => {
         const playerDisplay = player.mention ? `${player.mention} ${player.name}` : player.name;
@@ -730,7 +725,13 @@ export class DistributionManager {
         output += `• ${playerDisplay} - Please move to **${player.targetClan}**${checkmark}\n`;
       });
       
-      return { text: output, players: specificPlayers };
+      return {
+        text: output,
+        players: specificPlayers,
+        remainingCount,
+        totalCount,
+        completed: remainingCount === 0 && totalCount > 0
+      };
     }
     
     // Build new list from scratch
@@ -841,12 +842,7 @@ export class DistributionManager {
 
     // Format output
     const remainingCount = totalCount - doneCount;
-    if (remainingCount === 0 && totalCount > 0) {
-      output = ' -\n\n**SWAPS COMPLETED**';
-      return { text: output, players: allPlayers };
-    } else {
-      output += `Total players remaining: **${remainingCount}** / ${totalCount}\n\n`;
-    }
+    output += `Total players remaining: **${remainingCount}** / ${totalCount}\n\n`;
     
     allPlayers.forEach(player => {
       // Use mention if available, add name after mention
@@ -855,6 +851,12 @@ export class DistributionManager {
       output += `• ${playerDisplay} - Please move to **${player.targetClan}**${checkmark}\n`;
     });
 
-    return { text: output, players: allPlayers };
+    return {
+      text: output,
+      players: allPlayers,
+      remainingCount,
+      totalCount,
+      completed: remainingCount === 0 && totalCount > 0
+    };
   }
 }

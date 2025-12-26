@@ -28,6 +28,7 @@ export class DiscordBot {
     this.pendingScheduleChannel = new Map(); // Store pending channel selection for schedule (userId -> channelId)
     this.lastSelectedPlayers = new Map(); // Store last selected players for mark done (userId -> [identifiers])
     this.swapsLeftPlayersList = []; // Store players shown in last Swaps Left message
+    this.swapsLeftCompletionSent = false; // Prevent spamming SWAPS COMPLETED message
     this.dataSnapshot = null; // Store snapshot of sheet data for auto-send comparison
     this.autoSendMode = false; // Track if auto-send mode is active
     this.savedState = null; // Last loaded persistent state (from local file or BotState sheet)
@@ -2004,12 +2005,17 @@ export class DiscordBot {
 
     // Send the list publicly (not ephemeral) and save the message
     await interaction.editReply('📋 Sending Swaps Left to channel...');
-    const swapsLeftMessage = await interaction.channel.send(result.text);
+    this.lastSwapsLeftMessages = await this.sendLongMessage(interaction.channel, result.text);
     
     // Store the message and players list for later updates
-    this.lastSwapsLeftMessages = [swapsLeftMessage];
     this.swapsLeftPlayersList = result.players;
+    this.swapsLeftCompletionSent = false;
     this.saveMessageIds();
+
+    if (result.completed && !this.swapsLeftCompletionSent) {
+      await interaction.channel.send(' -\n\n**SWAPS COMPLETED**');
+      this.swapsLeftCompletionSent = true;
+    }
 
     const dmResult = await this.sendSwapsLeftDMs(result.players || []);
     await interaction.followUp({
@@ -2294,27 +2300,30 @@ export class DiscordBot {
       // Use the stored players list for updates (only show players from original message)
       const result = this.distributionManager.getSwapsLeft(false, this.swapsLeftPlayersList);
       const swapsLeftText = result.text;
-      const maxLength = 2000;
-      const chunks = [];
-      
-      let currentChunk = '';
-      const lines = swapsLeftText.split('\n');
-      
-      for (const line of lines) {
-        if ((currentChunk + line + '\n').length > maxLength) {
-          if (currentChunk) chunks.push(currentChunk);
-          currentChunk = line + '\n';
-        } else {
-          currentChunk += line + '\n';
-        }
+      const safeText = this.sanitizeMessageContent(swapsLeftText);
+      const chunks = this.splitTextByLinesToChunks(safeText, 2000);
+
+      if (chunks.length > this.lastSwapsLeftMessages.length) {
+        console.warn(
+          `⚠️ SwapsLeft now needs ${chunks.length} message(s) but only ${this.lastSwapsLeftMessages.length} are saved. ` +
+          `Not sending new messages automatically. Please run /swapsleft to recreate swaps left messages.`
+        );
       }
-      if (currentChunk) chunks.push(currentChunk);
 
       for (let i = 0; i < Math.min(chunks.length, this.lastSwapsLeftMessages.length); i++) {
         try {
-          await this.lastSwapsLeftMessages[i].edit(chunks[i]);
+          await this.lastSwapsLeftMessages[i].edit({ content: chunks[i], allowedMentions: { parse: ['users'] } });
         } catch (error) {
           console.error(`❌ Failed to update swapsleft message ${i + 1}: ${error.message}`);
+        }
+      }
+
+      if (result.completed && !this.swapsLeftCompletionSent) {
+        try {
+          await this.lastSwapsLeftMessages[0].channel.send(' -\n\n**SWAPS COMPLETED**');
+          this.swapsLeftCompletionSent = true;
+        } catch (error) {
+          console.warn('⚠️ Failed to send SWAPS COMPLETED message:', error.message);
         }
       }
     }
@@ -3347,6 +3356,8 @@ export class DiscordBot {
       const result = this.distributionManager.getSwapsLeft();
       const swapsLeftText = result.text || result;
       const playersList = result.players || [];
+      this.swapsLeftPlayersList = playersList;
+      this.swapsLeftCompletionSent = false;
 
       console.log(`📊 getSwapsLeft result type: ${typeof result}`);
       console.log(`📊 result.players exists: ${!!result.players}`);
@@ -3376,6 +3387,11 @@ export class DiscordBot {
       this.saveMessageIds();
       
       console.log(`✅ Swaps left list sent (${this.lastSwapsLeftMessages.length} messages)`);
+
+      if (result.completed && !this.swapsLeftCompletionSent) {
+        await interaction.channel.send(' -\n\n**SWAPS COMPLETED**');
+        this.swapsLeftCompletionSent = true;
+      }
 
       await this.sendSwapsLeftDMs(playersList);
     } catch (error) {
@@ -3471,27 +3487,30 @@ export class DiscordBot {
           await this.lastSwapsLeftMessages[0].fetch();
           const result = this.distributionManager.getSwapsLeft(false, this.swapsLeftPlayersList);
           const swapsLeftText = result.text;
-          const maxLength = 2000;
-          const chunks = [];
-          
-          let currentChunk = '';
-          const lines = swapsLeftText.split('\n');
-          
-          for (const line of lines) {
-            if ((currentChunk + line + '\n').length > maxLength) {
-              if (currentChunk) chunks.push(currentChunk);
-              currentChunk = line + '\n';
-            } else {
-              currentChunk += line + '\n';
-            }
+          const safeText = this.sanitizeMessageContent(swapsLeftText);
+          const chunks = this.splitTextByLinesToChunks(safeText, 2000);
+
+          if (chunks.length > this.lastSwapsLeftMessages.length) {
+            console.warn(
+              `⚠️ SwapsLeft now needs ${chunks.length} message(s) but only ${this.lastSwapsLeftMessages.length} are saved. ` +
+              `Not sending new messages automatically. Please run /swapsleft to recreate swaps left messages.`
+            );
           }
-          if (currentChunk) chunks.push(currentChunk);
 
           for (let i = 0; i < Math.min(chunks.length, this.lastSwapsLeftMessages.length); i++) {
             try {
-              await this.lastSwapsLeftMessages[i].edit(chunks[i]);
+              await this.lastSwapsLeftMessages[i].edit({ content: chunks[i], allowedMentions: { parse: ['users'] } });
             } catch (error) {
               console.error(`❌ Failed to update swapsleft message ${i + 1}: ${error.message}`);
+            }
+          }
+
+          if (result.completed && !this.swapsLeftCompletionSent) {
+            try {
+              await this.lastSwapsLeftMessages[0].channel.send(' -\n\n**SWAPS COMPLETED**');
+              this.swapsLeftCompletionSent = true;
+            } catch (error) {
+              console.warn('⚠️ Failed to send SWAPS COMPLETED message:', error.message);
             }
           }
           console.log('✅ Swaps left messages refreshed');
