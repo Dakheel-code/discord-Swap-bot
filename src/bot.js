@@ -3112,8 +3112,10 @@ export class DiscordBot {
         }
       }
 
-      // Get the swaps left text
-      const swapsLeftText = this.distributionManager.getSwapsLeft();
+      // Get the swaps left text and player list
+      const result = this.distributionManager.getSwapsLeft();
+      const swapsLeftText = result.text || result;
+      const playersList = result.players || [];
 
       // Send the message
       const embed = new EmbedBuilder()
@@ -3131,6 +3133,50 @@ export class DiscordBot {
       this.saveMessageIds();
       
       console.log(`✅ Swaps left list sent (${this.lastSwapsLeftMessages.length} messages)`);
+      
+      // Send DMs to remaining players (only those not marked as done)
+      let dmsSent = 0;
+      let dmsFailed = 0;
+      
+      for (const player of playersList) {
+        // Skip if player is already done
+        if (player.isDone) {
+          continue;
+        }
+        
+        // Extract Discord ID from mention
+        let userId = null;
+        if (player.mention) {
+          const match = player.mention.match(/<@(\d+)>/);
+          if (match) {
+            userId = match[1];
+          }
+        }
+        
+        if (!userId) {
+          console.warn(`⚠️ No Discord ID found for player: ${player.name}`);
+          continue;
+        }
+        
+        try {
+          const user = await this.client.users.fetch(userId);
+          
+          // Create DM message
+          const dmMessage = `Hi ${player.mention},\n\n` +
+            `please move to **${player.targetClan}**. Thank you! 🙂\n\n` +
+            `When you have further questions or something else to say, contact <@259019320683298816>, <@698595356952068147> or <@289138975598297088>. 😁\n\n` +
+            `__Keep in mind:__ If you don't move within 18 hours after reset, you will be automatically kicked from the current clan, replaced and must apply on your own to RND.`;
+          
+          await user.send(dmMessage);
+          dmsSent++;
+          console.log(`✅ DM sent to ${player.name} (${userId})`);
+        } catch (error) {
+          dmsFailed++;
+          console.error(`❌ Failed to send DM to ${player.name} (${userId}): ${error.message}`);
+        }
+      }
+      
+      console.log(`📨 DM Summary: ${dmsSent} sent, ${dmsFailed} failed`);
     } catch (error) {
       console.error(`❌ Error in handleSwapsLeft: ${error.message}`);
       const embed = new EmbedBuilder()
