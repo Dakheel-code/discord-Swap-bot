@@ -81,7 +81,7 @@ export class DiscordBot {
 
         const dmMessage = `Hi ${mentionText},\n\n` +
           `please move to **${player.targetClan}**. Thank you! 🙂\n\n` +
-          `When you have further questions or something else to say, contact <@259019320683298816>, <@698595356952068147> or <@289138975598297088>. 😁\n\n` +
+          `When you have further questions or something else to say, contact <@942383653269430323>, <@858753170934333452> or <@731336517003509830>. 😁\n\n` +
           `__Keep in mind:__ If you don't move within 18 hours after reset, you will be automatically kicked from the current clan, replaced and must apply on your own to RND.`;
 
         await user.send(dmMessage);
