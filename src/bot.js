@@ -3117,6 +3117,18 @@ export class DiscordBot {
       const swapsLeftText = result.text || result;
       const playersList = result.players || [];
 
+      console.log(`📊 getSwapsLeft result type: ${typeof result}`);
+      console.log(`📊 result.players exists: ${!!result.players}`);
+      console.log(`📊 playersList length: ${playersList.length}`);
+      
+      // Debug: Show first 2 players structure
+      if (playersList.length > 0) {
+        console.log(`📋 First player structure:`, JSON.stringify(playersList[0], null, 2));
+        if (playersList.length > 1) {
+          console.log(`📋 Second player structure:`, JSON.stringify(playersList[1], null, 2));
+        }
+      }
+
       // Send the message
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
@@ -3135,8 +3147,8 @@ export class DiscordBot {
       console.log(`✅ Swaps left list sent (${this.lastSwapsLeftMessages.length} messages)`);
       
       // Send DMs to remaining players (only those not marked as done)
-      console.log(`📨 Starting DM sending process...`);
-      console.log(`📊 Players list length: ${playersList.length}`);
+      console.log(`📨 ========== STARTING DM SENDING PROCESS ==========`);
+      console.log(`📊 Total players in list: ${playersList.length}`);
       
       let dmsSent = 0;
       let dmsFailed = 0;
