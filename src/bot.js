@@ -883,7 +883,7 @@ export class DiscordBot {
       const displayName = name.length > 50 ? name.substring(0, 47) + '...' : name;
       return {
         label: displayName,
-        description: trophies ? `🏆 ${trophies}` : undefined,
+        description: trophies ? `${trophies}` : undefined,
         value: `player_${index}_${discordId || 'no_id'}`
       };
     });
@@ -1877,8 +1877,7 @@ export class DiscordBot {
       const rgrRemaining = playersByClans.RGR.filter(p => !p.isDone).length;
       const rgrOptions = playersByClans.RGR.slice(0, 25).map(player => ({
         label: player.name,
-        value: player.identifier,
-        emoji: '🏆'
+        value: player.identifier
       }));
 
       const rgrSelectMenu = new StringSelectMenuBuilder()
@@ -1896,8 +1895,7 @@ export class DiscordBot {
       const otlRemaining = playersByClans.OTL.filter(p => !p.isDone).length;
       const otlOptions = playersByClans.OTL.slice(0, 25).map(player => ({
         label: player.name,
-        value: player.identifier,
-        emoji: '🏆'
+        value: player.identifier
       }));
 
       const otlSelectMenu = new StringSelectMenuBuilder()
@@ -1915,8 +1913,7 @@ export class DiscordBot {
       const rndRemaining = playersByClans.RND.filter(p => !p.isDone).length;
       const rndOptions = playersByClans.RND.slice(0, 25).map(player => ({
         label: player.name,
-        value: player.identifier,
-        emoji: '🏆'
+        value: player.identifier
       }));
 
       const rndSelectMenu = new StringSelectMenuBuilder()
@@ -1934,8 +1931,7 @@ export class DiscordBot {
       const wildcardsRemaining = playersByClans.WILDCARDS.filter(p => !p.isDone).length;
       const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => ({
         label: player.name,
-        value: player.identifier,
-        emoji: '⚡'
+        value: player.identifier
       }));
 
       const wildcardsSelectMenu = new StringSelectMenuBuilder()
