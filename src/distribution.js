@@ -73,11 +73,22 @@ export class DistributionManager {
           // Add to excludedPlayers set for count
           this.excludedPlayers.add(identifier);
         } else if (action === 'RGR' || action === 'OTL' || action === 'RND') {
-          // Manual move
-          this.wildcardInfo.set(identifier, {
-            type: 'manual',
-            target: action
-          });
+          // Check if Action matches current clan
+          const currentClan = this.getPlayerClan(player);
+          
+          if (currentClan === action) {
+            // Player stays in same clan
+            this.wildcardInfo.set(identifier, {
+              type: 'stay',
+              target: action
+            });
+          } else {
+            // Player moves to different clan
+            this.wildcardInfo.set(identifier, {
+              type: 'manual',
+              target: action
+            });
+          }
         } else {
           // Unknown action
           this.wildcardInfo.set(identifier, {
@@ -635,7 +646,7 @@ export class DistributionManager {
         }
         
         if (info) {
-          if (info.type === 'excluded') {
+          if (info.type === 'excluded' || info.type === 'stay') {
             line += ` stays in **${info.target}**`;
           } else if (info.type === 'manual') {
             line += ` moves to **${info.target}**`;
