@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType } from 'discord.js';
 import { config } from './config.js';
 import { commands } from './commands.js';
-import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions } from './sheets.js';
+import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions, saveBotState, loadBotState } from './sheets.js';
 import { DistributionManager } from './distribution.js';
 import fs from 'fs';
 
@@ -87,6 +87,10 @@ export class DiscordBot {
       };
       fs.writeFileSync(this.messagesFilePath, JSON.stringify(data, null, 2));
       console.log('💾 Saved distribution data: messages, sortColumn, seasonNumber, and completedPlayers');
+
+      saveBotState(data)
+        .then(() => console.log('💾 Saved BotState to Google Sheets'))
+        .catch((error) => console.warn('⚠️ Failed to save BotState to Google Sheets:', error.message));
     } catch (error) {
       console.error('❌ Failed to save message IDs:', error);
     }
@@ -97,20 +101,36 @@ export class DiscordBot {
    */
   async loadMessageIds() {
     try {
-      if (!fs.existsSync(this.messagesFilePath)) {
-        console.log('ℹ️ No saved message IDs found');
-        return;
+      let data = null;
+      if (fs.existsSync(this.messagesFilePath)) {
+        data = JSON.parse(fs.readFileSync(this.messagesFilePath, 'utf8'));
+      } else {
+        console.log('ℹ️ No saved message IDs found locally, trying Google Sheets BotState...');
+        data = await loadBotState();
+        if (!data) {
+          console.log('ℹ️ No saved BotState found');
+          return;
+        }
+        console.log('✅ Loaded BotState from Google Sheets');
       }
 
-      const data = JSON.parse(fs.readFileSync(this.messagesFilePath, 'utf8'));
       this.lastChannelId = data.channelId;
 
       // Fetch the actual message objects
-      const channel = await this.client.channels.fetch(data.channelId);
-      if (channel) {
-        // Load distribution messages
-        this.lastDistributionMessages = [];
-        const distributionIds = data.distributionMessageIds || data.messageIds || []; // Support old format
+      this.lastDistributionMessages = [];
+      this.lastSwapsLeftMessages = [];
+
+      let channel = null;
+      if (data.channelId) {
+        try {
+          channel = await this.client.channels.fetch(data.channelId);
+        } catch (error) {
+          console.warn(`⚠️ Could not fetch channel ${data.channelId}: ${error.message}`);
+        }
+      }
+
+      const distributionIds = data.distributionMessageIds || data.messageIds || []; // Support old format
+      if (channel && distributionIds.length > 0) {
         for (const messageId of distributionIds) {
           try {
             const message = await channel.messages.fetch(messageId);
@@ -120,40 +140,40 @@ export class DiscordBot {
           }
         }
         console.log(`✅ Loaded ${this.lastDistributionMessages.length} distribution messages`);
+      }
 
-        // Load swapsleft messages
-        this.lastSwapsLeftMessages = [];
-        if (data.swapsLeftMessageIds && data.swapsLeftMessageIds.length > 0) {
-          for (const messageId of data.swapsLeftMessageIds) {
-            try {
-              const message = await channel.messages.fetch(messageId);
-              this.lastSwapsLeftMessages.push(message);
-            } catch (error) {
-              console.warn(`⚠️ Could not fetch swapsleft message ${messageId}`);
-            }
+      if (channel && data.swapsLeftMessageIds && data.swapsLeftMessageIds.length > 0) {
+        for (const messageId of data.swapsLeftMessageIds) {
+          try {
+            const message = await channel.messages.fetch(messageId);
+            this.lastSwapsLeftMessages.push(message);
+          } catch (error) {
+            console.warn(`⚠️ Could not fetch swapsleft message ${messageId}`);
           }
-          console.log(`✅ Loaded ${this.lastSwapsLeftMessages.length} swapsleft messages`);
         }
-        
-        // Reload distribution data from Google Sheets to restore state
-        if (this.lastDistributionMessages.length > 0) {
-          console.log('🔄 Reloading distribution data from Google Sheets...');
-          this.playersData = await fetchPlayersDataWithDiscordNames();
-          
-          // Restore sortColumn and seasonNumber from saved data
-          const sortColumn = data.sortColumn || 'Trophies';
-          const seasonNumber = data.seasonNumber || null;
-          
-          this.distributionManager.distribute(this.playersData, sortColumn, seasonNumber);
-          
-          // Restore completedPlayers (checkmarks)
-          if (data.completedPlayers && Array.isArray(data.completedPlayers)) {
-            this.distributionManager.completedPlayers = new Set(data.completedPlayers);
-            console.log(`✅ Restored ${data.completedPlayers.length} completed players (checkmarks)`);
-          }
-          
-          console.log(`✅ Distribution data restored: ${this.playersData.length} players, sortColumn: ${sortColumn}, seasonNumber: ${seasonNumber}`);
+        console.log(`✅ Loaded ${this.lastSwapsLeftMessages.length} swapsleft messages`);
+      }
+
+      const shouldRestoreState =
+        (distributionIds && distributionIds.length > 0) ||
+        (data.swapsLeftMessageIds && data.swapsLeftMessageIds.length > 0) ||
+        (data.completedPlayers && Array.isArray(data.completedPlayers) && data.completedPlayers.length > 0);
+
+      if (shouldRestoreState) {
+        console.log('🔄 Reloading distribution data from Google Sheets...');
+        this.playersData = await fetchPlayersDataWithDiscordNames();
+
+        const sortColumn = data.sortColumn || 'Trophies';
+        const seasonNumber = data.seasonNumber || null;
+
+        this.distributionManager.distribute(this.playersData, sortColumn, seasonNumber);
+
+        if (data.completedPlayers && Array.isArray(data.completedPlayers)) {
+          this.distributionManager.completedPlayers = new Set(data.completedPlayers);
+          console.log(`✅ Restored ${data.completedPlayers.length} completed players (checkmarks)`);
         }
+
+        console.log(`✅ Distribution data restored: ${this.playersData.length} players, sortColumn: ${sortColumn}, seasonNumber: ${seasonNumber}`);
       }
     } catch (error) {
       console.error('❌ Failed to load message IDs:', error);

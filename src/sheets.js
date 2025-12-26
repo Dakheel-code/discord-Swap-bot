@@ -621,3 +621,93 @@ export async function clearAllPlayerActions() {
     throw error;
   }
 }
+
+async function ensureBotStateSheetExists() {
+  if (!sheetsClientWithAuth) {
+    return false;
+  }
+
+  try {
+    const meta = await sheetsClientWithAuth.spreadsheets.get({
+      spreadsheetId: config.googleSheets.sheetId,
+    });
+
+    const sheets = meta.data.sheets || [];
+    const exists = sheets.some(s => s.properties && s.properties.title === 'BotState');
+    if (exists) {
+      return true;
+    }
+
+    await sheetsClientWithAuth.spreadsheets.batchUpdate({
+      spreadsheetId: config.googleSheets.sheetId,
+      resource: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: 'BotState',
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    return true;
+  } catch (error) {
+    console.warn('⚠️ Failed to ensure BotState sheet exists:', error.message);
+    return false;
+  }
+}
+
+export async function saveBotState(state) {
+  if (!sheetsClientWithAuth) {
+    throw new Error('Write access not available. Please configure Service Account credentials in .env file (GOOGLE_SERVICE_ACCOUNT_PATH)');
+  }
+
+  const ok = await ensureBotStateSheetExists();
+  if (!ok) {
+    throw new Error('Failed to create/find BotState sheet');
+  }
+
+  const values = [
+    ['key', 'value'],
+    ['state', JSON.stringify(state)],
+  ];
+
+  await sheetsClientWithAuth.spreadsheets.values.update({
+    spreadsheetId: config.googleSheets.sheetId,
+    range: 'BotState!A1:B2',
+    valueInputOption: 'RAW',
+    resource: { values },
+  });
+
+  return true;
+}
+
+export async function loadBotState() {
+  if (!sheetsClient) {
+    throw new Error('Sheets client not initialized');
+  }
+
+  try {
+    const response = await sheetsClient.spreadsheets.values.get({
+      spreadsheetId: config.googleSheets.sheetId,
+      range: 'BotState!A:B',
+    });
+
+    const rows = response.data.values || [];
+    for (let i = 0; i < rows.length; i++) {
+      const key = rows[i][0] ? String(rows[i][0]).trim() : '';
+      const value = rows[i][1] ? String(rows[i][1]).trim() : '';
+      if (key === 'state' && value) {
+        return JSON.parse(value);
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('ℹ️ No BotState found in Google Sheets:', error.message);
+    return null;
+  }
+}
