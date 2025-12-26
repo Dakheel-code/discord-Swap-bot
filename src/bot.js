@@ -100,6 +100,18 @@ export class DiscordBot {
     return { dmsSent, dmsFailed, skippedDone, skippedNoId };
   }
 
+  sanitizeMessageContent(text) {
+    if (text === null || text === undefined) return '';
+    const raw = String(text);
+    // Prevent unclosed code blocks / inline code from breaking all markdown rendering
+    // Replace triple backticks first, then single backticks
+    return raw
+      .replace(/```/g, "'''")
+      .replace(/`/g, "'")
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+  }
+
   async ensureDistributionLoaded() {
     if (this.distributionManager.allPlayers && this.distributionManager.allPlayers.length > 0) {
       return true;
@@ -3508,14 +3520,15 @@ export class DiscordBot {
    */
   async updateDistributionMessages(text) {
     console.log(`📝 updateDistributionMessages: Updating ${this.lastDistributionMessages.length} messages`);
-    console.log(`📝 Text length: ${text.length} characters`);
-    console.log(`📝 First 200 chars: ${text.substring(0, 200)}`);
+    const safeText = this.sanitizeMessageContent(text);
+    console.log(`📝 Text length: ${safeText.length} characters`);
+    console.log(`📝 First 200 chars: ${safeText.substring(0, 200)}`);
     
     const maxLength = 2000;
     const chunks = [];
     
     let currentChunk = '';
-    const lines = text.split('\n');
+    const lines = safeText.split('\n');
 
     for (const line of lines) {
       if (currentChunk.length + line.length + 1 > maxLength) {
@@ -3537,7 +3550,10 @@ export class DiscordBot {
       if (i < this.lastDistributionMessages.length) {
         try {
           console.log(`✅ Updating message ${i + 1}/${chunks.length}`);
-          await this.lastDistributionMessages[i].edit(chunks[i]);
+          await this.lastDistributionMessages[i].edit({
+            content: chunks[i],
+            allowedMentions: { parse: ['users'] }
+          });
           console.log(`✅ Message ${i + 1} updated successfully`);
         } catch (error) {
           console.error(`❌ Failed to edit message ${i + 1}:`, error.message);
@@ -3627,9 +3643,11 @@ export class DiscordBot {
   async sendLongMessage(channel, text, saveMessages = false, addButtons = false) {
     const maxLength = 2000;
     const chunks = [];
+
+    const safeText = this.sanitizeMessageContent(text);
     
     let currentChunk = '';
-    const lines = text.split('\n');
+    const lines = safeText.split('\n');
 
     for (const line of lines) {
       if (currentChunk.length + line.length + 1 > maxLength) {
@@ -3656,7 +3674,7 @@ export class DiscordBot {
       const chunk = chunks[i];
       
       // Don't add buttons to message chunks anymore
-      const messageOptions = { content: chunk };
+      const messageOptions = { content: chunk, allowedMentions: { parse: ['users'] } };
       
       const message = await channel.send(messageOptions);
       sentMessages.push(message);
