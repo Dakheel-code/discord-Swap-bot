@@ -1299,36 +1299,13 @@ export class DiscordBot {
     try {
       const formattedText = this.distributionManager.getFormattedDistribution();
       
-      // Split into chunks if needed
-      const maxLength = 2000;
-      const chunks = [];
-      let currentChunk = '';
-      const lines = formattedText.split('\n');
+      // Send confirmation to user (ephemeral)
+      await interaction.editReply('📋 Sending distribution to channel...');
       
-      for (const line of lines) {
-        if ((currentChunk + line + '\n').length > maxLength) {
-          if (currentChunk) chunks.push(currentChunk);
-          currentChunk = line + '\n';
-        } else {
-          currentChunk += line + '\n';
-        }
-      }
-      if (currentChunk) chunks.push(currentChunk);
+      // Send distribution publicly to channel so mentions display properly
+      await this.sendLongMessage(interaction.channel, formattedText);
       
-      // Send first chunk
-      await interaction.editReply({ content: chunks[0] });
-      
-      // Send remaining chunks
-      for (let i = 1; i < chunks.length; i++) {
-        await interaction.followUp({ content: chunks[i], ephemeral: true });
-      }
-      
-      // Send Admin Controls after showing distribution
-      await interaction.followUp({
-        content: '**Admin Controls** (Only you can see this)',
-        components: this.createDistributionButtons(),
-        ephemeral: true
-      });
+      console.log('✅ Distribution shown via Show button');
     } catch (error) {
       console.error('❌ Error showing distribution:', error);
       await interaction.editReply(`❌ Error: ${error.message}`);
