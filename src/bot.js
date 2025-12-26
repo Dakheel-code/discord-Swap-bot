@@ -80,10 +80,12 @@ export class DiscordBot {
         channelId: this.lastChannelId,
         distributionMessageIds: this.lastDistributionMessages.map(msg => msg.id),
         swapsLeftMessageIds: this.lastSwapsLeftMessages.map(msg => msg.id),
+        sortColumn: this.distributionManager.sortColumn || 'Trophies',
+        seasonNumber: this.distributionManager.customSeasonNumber || null,
         timestamp: Date.now()
       };
       fs.writeFileSync(this.messagesFilePath, JSON.stringify(data, null, 2));
-      console.log('💾 Saved distribution and swapsleft message IDs');
+      console.log('💾 Saved distribution and swapsleft message IDs with sortColumn and seasonNumber');
     } catch (error) {
       console.error('❌ Failed to save message IDs:', error);
     }
@@ -136,9 +138,13 @@ export class DiscordBot {
         if (this.lastDistributionMessages.length > 0) {
           console.log('🔄 Reloading distribution data from Google Sheets...');
           this.playersData = await fetchPlayersDataWithDiscordNames();
-          const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-          this.distributionManager.distribute(this.playersData, sortColumn);
-          console.log(`✅ Distribution data restored: ${this.playersData.length} players`);
+          
+          // Restore sortColumn and seasonNumber from saved data
+          const sortColumn = data.sortColumn || 'Trophies';
+          const seasonNumber = data.seasonNumber || null;
+          
+          this.distributionManager.distribute(this.playersData, sortColumn, seasonNumber);
+          console.log(`✅ Distribution data restored: ${this.playersData.length} players, sortColumn: ${sortColumn}, seasonNumber: ${seasonNumber}`);
         }
       }
     } catch (error) {
