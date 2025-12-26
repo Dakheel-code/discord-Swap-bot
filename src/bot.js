@@ -871,7 +871,13 @@ export class DiscordBot {
     try {
       await interaction.deferReply({ ephemeral: true });
       
-      if (customId === 'select_players_done' || customId === 'select_rgr_done' || customId === 'select_otl_done' || customId === 'select_rnd_done' || customId === 'select_wildcards_done') {
+      if (
+        customId === 'select_players_done' ||
+        customId.startsWith('select_rgr_done') ||
+        customId.startsWith('select_otl_done') ||
+        customId.startsWith('select_rnd_done') ||
+        customId.startsWith('select_wildcards_done')
+      ) {
         await this.handleSelectPlayersDone(interaction);
       } else if (customId.startsWith('move_player_select_')) {
         await this.handleMovePlayerSelect(interaction);
@@ -2066,79 +2072,66 @@ export class DiscordBot {
       return;
     }
 
-    // Create 3 separate select menus (one for each clan)
+    const buildSelectMenuRows = (baseCustomId, placeholder, players) => {
+      const rows = [];
+
+      for (let pageIndex = 0; pageIndex < players.length; pageIndex += 25) {
+        const page = players.slice(pageIndex, pageIndex + 25);
+        const options = page.map(player => ({
+          label: player.name,
+          value: player.identifier
+        }));
+
+        const pageNumber = Math.floor(pageIndex / 25) + 1;
+        const totalPages = Math.ceil(players.length / 25);
+
+        const customId = pageNumber === 1
+          ? baseCustomId
+          : `${baseCustomId}_page_${pageNumber}`;
+
+        const menu = new StringSelectMenuBuilder()
+          .setCustomId(customId)
+          .setPlaceholder(totalPages > 1 ? `${placeholder} (${pageNumber}/${totalPages})` : placeholder)
+          .setMinValues(0)
+          .setMaxValues(Math.min(options.length, 25))
+          .addOptions(options);
+
+        rows.push(new ActionRowBuilder().addComponents(menu));
+      }
+
+      return rows;
+    };
+
+    // Create select menus (Discord limit: 25 options per menu, 5 rows per message)
     const components = [];
+    const extraComponentBatches = [];
 
     // RGR Select Menu - show ALL players
     if (playersByClans.RGR.length > 0) {
       const rgrRemaining = playersByClans.RGR.filter(p => !p.isDone).length;
-      const rgrOptions = playersByClans.RGR.slice(0, 25).map(player => ({
-        label: player.name,
-        value: player.identifier
-      }));
-
-      const rgrSelectMenu = new StringSelectMenuBuilder()
-        .setCustomId('select_rgr_done')
-        .setPlaceholder(`RGR (${rgrRemaining} remaining)`)
-        .setMinValues(0)
-        .setMaxValues(Math.min(rgrOptions.length, 25))
-        .addOptions(rgrOptions);
-
-      components.push(new ActionRowBuilder().addComponents(rgrSelectMenu));
+      const rgrRows = buildSelectMenuRows('select_rgr_done', `RGR (${rgrRemaining} remaining)`, playersByClans.RGR);
+      components.push(...rgrRows);
     }
 
     // OTL Select Menu - show ALL players
     if (playersByClans.OTL.length > 0) {
       const otlRemaining = playersByClans.OTL.filter(p => !p.isDone).length;
-      const otlOptions = playersByClans.OTL.slice(0, 25).map(player => ({
-        label: player.name,
-        value: player.identifier
-      }));
-
-      const otlSelectMenu = new StringSelectMenuBuilder()
-        .setCustomId('select_otl_done')
-        .setPlaceholder(`OTL (${otlRemaining} remaining)`)
-        .setMinValues(0)
-        .setMaxValues(Math.min(otlOptions.length, 25))
-        .addOptions(otlOptions);
-
-      components.push(new ActionRowBuilder().addComponents(otlSelectMenu));
+      const otlRows = buildSelectMenuRows('select_otl_done', `OTL (${otlRemaining} remaining)`, playersByClans.OTL);
+      components.push(...otlRows);
     }
 
     // RND Select Menu - show ALL players
     if (playersByClans.RND.length > 0) {
       const rndRemaining = playersByClans.RND.filter(p => !p.isDone).length;
-      const rndOptions = playersByClans.RND.slice(0, 25).map(player => ({
-        label: player.name,
-        value: player.identifier
-      }));
-
-      const rndSelectMenu = new StringSelectMenuBuilder()
-        .setCustomId('select_rnd_done')
-        .setPlaceholder(`RND (${rndRemaining} remaining)`)
-        .setMinValues(0)
-        .setMaxValues(Math.min(rndOptions.length, 25))
-        .addOptions(rndOptions);
-
-      components.push(new ActionRowBuilder().addComponents(rndSelectMenu));
+      const rndRows = buildSelectMenuRows('select_rnd_done', `RND (${rndRemaining} remaining)`, playersByClans.RND);
+      components.push(...rndRows);
     }
 
     // WILDCARDS Select Menu - show ALL players (even if all are done)
     if (playersByClans.WILDCARDS.length > 0) {
       const wildcardsRemaining = playersByClans.WILDCARDS.filter(p => !p.isDone).length;
-      const wildcardsOptions = playersByClans.WILDCARDS.slice(0, 25).map(player => ({
-        label: player.name,
-        value: player.identifier
-      }));
-
-      const wildcardsSelectMenu = new StringSelectMenuBuilder()
-        .setCustomId('select_wildcards_done')
-        .setPlaceholder(`WILDCARDS (${wildcardsRemaining} remaining)`)
-        .setMinValues(0)
-        .setMaxValues(Math.min(wildcardsOptions.length, 25))
-        .addOptions(wildcardsOptions);
-
-      components.push(new ActionRowBuilder().addComponents(wildcardsSelectMenu));
+      const wildRows = buildSelectMenuRows('select_wildcards_done', `WILDCARDS (${wildcardsRemaining} remaining)`, playersByClans.WILDCARDS);
+      components.push(...wildRows);
     }
 
     // Add instructions
@@ -2147,10 +2140,25 @@ export class DiscordBot {
       `• Select a player → Adds ✅ mark\n` +
       `• Select same player again → Removes ✅ mark`;
     
+    const MAX_ROWS_PER_MESSAGE = 5;
+    const firstBatch = components.slice(0, MAX_ROWS_PER_MESSAGE);
+    const remainingRows = components.slice(MAX_ROWS_PER_MESSAGE);
+
     await interaction.editReply({
       content: instructions,
-      components: components
+      components: firstBatch
     });
+
+    if (remainingRows.length > 0) {
+      for (let i = 0; i < remainingRows.length; i += MAX_ROWS_PER_MESSAGE) {
+        const batch = remainingRows.slice(i, i + MAX_ROWS_PER_MESSAGE);
+        await interaction.followUp({
+          content: 'More players:',
+          components: batch,
+          ephemeral: true
+        });
+      }
+    }
   }
 
   /**
