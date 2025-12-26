@@ -449,6 +449,20 @@ export class DiscordBot {
         );
         console.log('✅ Registered guild commands');
       } else {
+        // Delete old guild-specific commands from all guilds to prevent duplicates
+        const guilds = this.client.guilds.cache;
+        for (const [guildId, guild] of guilds) {
+          try {
+            await rest.put(
+              Routes.applicationGuildCommands(this.client.user.id, guildId),
+              { body: [] }
+            );
+            console.log(`🗑️ Cleared guild commands from: ${guild.name}`);
+          } catch (error) {
+            console.error(`❌ Failed to clear commands from ${guild.name}:`, error.message);
+          }
+        }
+        
         // Register globally
         await rest.put(
           Routes.applicationCommands(this.client.user.id),
