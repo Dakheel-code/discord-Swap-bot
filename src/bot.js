@@ -362,34 +362,49 @@ export class DiscordBot {
         await this.sendLongMessage(channel, formattedText, true, true);
         console.log(`✅ Scheduled post sent to ${channel.name}`);
         
-        // Send notification about the scheduled post to the creation channel
+        // Send notification about the scheduled post to multiple channels
         const creationChannelId = this.scheduledData.creationChannelId || this.scheduledData.channelId;
-        const creationChannel = await this.client.channels.fetch(creationChannelId).catch(() => null);
+        const secondNotificationChannelId = this.scheduledData.secondNotificationChannelId || null;
         
-        if (creationChannel) {
-          const rgrCount = this.distributionManager.groups.RGR?.length || 0;
-          const otlCount = this.distributionManager.groups.OTL?.length || 0;
-          const rndCount = this.distributionManager.groups.RND?.length || 0;
-          const wildcardsCount = this.distributionManager.groups.WILDCARDS?.length || 0;
-          const totalPlayers = this.playersData.length;
-          
-          const notificationEmbed = new EmbedBuilder()
-            .setColor(0x00ff00)
-            .setTitle('✅ Scheduled Distribution Sent')
-            .setDescription(`The scheduled swap distribution has been posted successfully in ${channel}!`)
-            .addFields(
-              { name: '📊 Total Players', value: `${totalPlayers}`, inline: true },
-              { name: '🔴 RGR', value: `${rgrCount} players`, inline: true },
-              { name: '🟡 OTL', value: `${otlCount} players`, inline: true },
-              { name: '🟢 RND', value: `${rndCount} players`, inline: true },
-              { name: '⭐ WILDCARDS', value: `${wildcardsCount} players`, inline: true },
-              { name: '📅 Sent At', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
-            )
-            .setFooter({ text: this.autoSendMode ? 'Auto-Send Mode: Monitoring continues' : 'Scheduled post completed' })
-            .setTimestamp();
-          
-          await creationChannel.send({ embeds: [notificationEmbed] });
-          console.log(`📢 Notification sent to creation channel: ${creationChannel.name}`);
+        // Prepare notification channels list
+        const notificationChannelIds = [creationChannelId];
+        if (secondNotificationChannelId) {
+          notificationChannelIds.push(secondNotificationChannelId);
+        }
+        
+        // Prepare notification embed
+        const rgrCount = this.distributionManager.groups.RGR?.length || 0;
+        const otlCount = this.distributionManager.groups.OTL?.length || 0;
+        const rndCount = this.distributionManager.groups.RND?.length || 0;
+        const wildcardsCount = this.distributionManager.groups.WILDCARDS?.length || 0;
+        const totalPlayers = this.playersData.length;
+        
+        const notificationEmbed = new EmbedBuilder()
+          .setColor(0x00ff00)
+          .setTitle('✅ Scheduled Distribution Sent')
+          .setDescription(`The scheduled swap distribution has been posted successfully in ${channel}!`)
+          .addFields(
+            { name: '📊 Total Players', value: `${totalPlayers}`, inline: true },
+            { name: '🔴 RGR', value: `${rgrCount} players`, inline: true },
+            { name: '🟡 OTL', value: `${otlCount} players`, inline: true },
+            { name: '🟢 RND', value: `${rndCount} players`, inline: true },
+            { name: '⭐ WILDCARDS', value: `${wildcardsCount} players`, inline: true },
+            { name: '📅 Sent At', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+          )
+          .setFooter({ text: this.autoSendMode ? 'Auto-Send Mode: Monitoring continues' : 'Scheduled post completed' })
+          .setTimestamp();
+        
+        // Send notification to all channels
+        for (const channelId of notificationChannelIds) {
+          try {
+            const notifChannel = await this.client.channels.fetch(channelId).catch(() => null);
+            if (notifChannel) {
+              await notifChannel.send({ embeds: [notificationEmbed] });
+              console.log(`📢 Notification sent to channel: ${notifChannel.name} (${channelId})`);
+            }
+          } catch (error) {
+            console.error(`❌ Failed to send notification to channel ${channelId}:`, error);
+          }
         }
       } else {
         console.error('❌ No distribution data to send');
@@ -1598,6 +1613,7 @@ export class DiscordBot {
           this.scheduledData = {
             channelId: channelId,
             creationChannelId: interaction.channel.id,
+            secondNotificationChannelId: '984981028454162492',
             datetime: datetime,
             timestamp: scheduledDate.getTime(),
             autoSend: true,
@@ -2708,6 +2724,7 @@ export class DiscordBot {
         datetime: datetime,
         channelId: channelId,
         creationChannelId: interaction.channel.id,
+        secondNotificationChannelId: '984981028454162492',
         timestamp: scheduledDate.getTime()
       };
       this.saveSchedule();
