@@ -842,7 +842,7 @@ export class DistributionManager {
       // Use mention if available, add name after mention
       const playerDisplay = player.mention ? `${player.mention} ${player.name}` : player.name;
       const checkmark = player.isDone ? ' ✅' : '';
-      output += `• ${playerDisplay} - Please move ➜ **${player.targetClan}**${checkmark}\n`;
+      output += `• ${playerDisplay} - Please move to **${player.targetClan}**${checkmark}\n`;
     });
 
     return { text: output, players: allPlayers };
