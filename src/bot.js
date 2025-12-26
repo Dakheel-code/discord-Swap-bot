@@ -2003,6 +2003,17 @@ export class DiscordBot {
     // Get the swaps left text and players list (hideCompleted=true for new messages)
     const result = this.distributionManager.getSwapsLeft(true);
 
+    // If all players are done, send only SWAPS COMPLETED
+    if (result.completed) {
+      await interaction.editReply('✅ All players completed!');
+      await interaction.channel.send(' -\n\n**SWAPS COMPLETED**');
+      this.swapsLeftCompletionSent = true;
+      this.lastSwapsLeftMessages = [];
+      this.swapsLeftPlayersList = result.players;
+      this.saveMessageIds();
+      return;
+    }
+
     // Send the list publicly (not ephemeral) and save the message
     await interaction.editReply('📋 Sending Swaps Left to channel...');
     this.lastSwapsLeftMessages = await this.sendLongMessage(interaction.channel, result.text);
@@ -2011,11 +2022,6 @@ export class DiscordBot {
     this.swapsLeftPlayersList = result.players;
     this.swapsLeftCompletionSent = false;
     this.saveMessageIds();
-
-    if (result.completed && !this.swapsLeftCompletionSent) {
-      await interaction.channel.send(' -\n\n**SWAPS COMPLETED**');
-      this.swapsLeftCompletionSent = true;
-    }
 
     const dmResult = await this.sendSwapsLeftDMs(result.players || []);
     await interaction.followUp({
@@ -3371,6 +3377,22 @@ export class DiscordBot {
         }
       }
 
+      // If all players are done, send only SWAPS COMPLETED
+      if (result.completed) {
+        const embed = new EmbedBuilder()
+          .setColor(0x00ff00)
+          .setTitle('✅ All Swaps Completed')
+          .setDescription('All players have been marked as done!')
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+        await interaction.channel.send(' -\n\n**SWAPS COMPLETED**');
+        this.swapsLeftCompletionSent = true;
+        this.lastSwapsLeftMessages = [];
+        this.saveMessageIds();
+        return;
+      }
+
       // Send the message
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
@@ -3387,11 +3409,6 @@ export class DiscordBot {
       this.saveMessageIds();
       
       console.log(`✅ Swaps left list sent (${this.lastSwapsLeftMessages.length} messages)`);
-
-      if (result.completed && !this.swapsLeftCompletionSent) {
-        await interaction.channel.send(' -\n\n**SWAPS COMPLETED**');
-        this.swapsLeftCompletionSent = true;
-      }
 
       await this.sendSwapsLeftDMs(playersList);
     } catch (error) {
