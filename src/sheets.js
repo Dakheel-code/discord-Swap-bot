@@ -672,7 +672,7 @@ export async function saveBotState(state) {
 
   const values = [
     ['key', 'value'],
-    ['state', JSON.stringify(state)],
+    ['state', state ? JSON.stringify(state) : ''],
   ];
 
   await sheetsClientWithAuth.spreadsheets.values.update({

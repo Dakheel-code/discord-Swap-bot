@@ -30,6 +30,60 @@ export class DiscordBot {
     this.swapsLeftPlayersList = []; // Store players shown in last Swaps Left message
     this.dataSnapshot = null; // Store snapshot of sheet data for auto-send comparison
     this.autoSendMode = false; // Track if auto-send mode is active
+    this.savedState = null; // Last loaded persistent state (from local file or BotState sheet)
+  }
+
+  async ensureDistributionLoaded() {
+    if (this.distributionManager.allPlayers && this.distributionManager.allPlayers.length > 0) {
+      return true;
+    }
+
+    let data = this.savedState;
+    if (!data) {
+      if (fs.existsSync(this.messagesFilePath)) {
+        try {
+          data = JSON.parse(fs.readFileSync(this.messagesFilePath, 'utf8'));
+        } catch (error) {
+          console.warn('⚠️ Failed to parse local distribution_messages.json:', error.message);
+        }
+      }
+    }
+
+    if (!data) {
+      try {
+        data = await loadBotState();
+      } catch (error) {
+        console.warn('⚠️ Failed to load BotState from Google Sheets:', error.message);
+      }
+    }
+
+    if (!data) {
+      return false;
+    }
+
+    this.savedState = data;
+    if (data.channelId) {
+      this.lastChannelId = data.channelId;
+    }
+
+    try {
+      console.log('🔄 ensureDistributionLoaded: Restoring distribution from Google Sheets...');
+      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const sortColumn = data.sortColumn || this.distributionManager.sortColumn || 'Trophies';
+      const seasonNumber = data.seasonNumber || this.distributionManager.customSeasonNumber || null;
+      this.distributionManager.distribute(this.playersData, sortColumn, seasonNumber);
+
+      if (data.completedPlayers && Array.isArray(data.completedPlayers)) {
+        this.distributionManager.completedPlayers = new Set(data.completedPlayers);
+        console.log(`✅ ensureDistributionLoaded: Restored ${data.completedPlayers.length} completed players (checkmarks)`);
+      }
+
+      console.log(`✅ ensureDistributionLoaded: Distribution restored (${this.playersData.length} players)`);
+      return this.distributionManager.allPlayers && this.distributionManager.allPlayers.length > 0;
+    } catch (error) {
+      console.error('❌ ensureDistributionLoaded failed:', error);
+      return false;
+    }
   }
 
   /**
@@ -113,6 +167,8 @@ export class DiscordBot {
         }
         console.log('✅ Loaded BotState from Google Sheets');
       }
+
+      this.savedState = data;
 
       this.lastChannelId = data.channelId;
 
@@ -1261,6 +1317,10 @@ export class DiscordBot {
       if (fs.existsSync(messagesFilePath)) {
         fs.unlinkSync(messagesFilePath);
       }
+
+      saveBotState(null)
+        .then(() => console.log('🗑️ Cleared BotState in Google Sheets'))
+        .catch((error) => console.warn('⚠️ Failed to clear BotState in Google Sheets:', error.message));
       
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
@@ -1295,6 +1355,10 @@ export class DiscordBot {
       if (fs.existsSync(messagesFilePath)) {
         fs.unlinkSync(messagesFilePath);
       }
+
+      saveBotState(null)
+        .then(() => console.log('🗑️ Cleared BotState in Google Sheets'))
+        .catch((error) => console.warn('⚠️ Failed to clear BotState in Google Sheets:', error.message));
       
       // Clear all actions from Google Sheet
       await clearAllPlayerActions();
@@ -1324,8 +1388,8 @@ export class DiscordBot {
   async handleShowDistributionButton(interaction) {
     await interaction.deferReply({ ephemeral: true });
     
-    // Check if distribution exists
-    if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
+    const ok = await this.ensureDistributionLoaded();
+    if (!ok) {
       await interaction.editReply('⚠️ No swap found. Please run `/swap` first.');
       return;
     }
@@ -1810,8 +1874,8 @@ export class DiscordBot {
    * Handle "Show Swaps Left" button
    */
   async handleSwapsLeftButton(interaction) {
-    // Check if distribution exists
-    if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
+    const ok = await this.ensureDistributionLoaded();
+    if (!ok) {
       await interaction.editReply('⚠️ No swap found. Please run `/swap` first.');
       return;
     }
@@ -1851,8 +1915,8 @@ export class DiscordBot {
    * Handle "Mark Done" button
    */
   async handleMarkDoneButton(interaction) {
-    // Check if distribution exists
-    if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
+    const ok = await this.ensureDistributionLoaded();
+    if (!ok) {
       await interaction.editReply('⚠️ No swap found. Please run `/swap` first.');
       return;
     }
