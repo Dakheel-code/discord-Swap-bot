@@ -131,6 +131,15 @@ export class DiscordBot {
           }
           console.log(`✅ Loaded ${this.lastSwapsLeftMessages.length} swapsleft messages`);
         }
+        
+        // Reload distribution data from Google Sheets to restore state
+        if (this.lastDistributionMessages.length > 0) {
+          console.log('🔄 Reloading distribution data from Google Sheets...');
+          this.playersData = await fetchPlayersDataWithDiscordNames();
+          const sortColumn = this.distributionManager.sortColumn || 'Trophies';
+          this.distributionManager.distribute(this.playersData, sortColumn);
+          console.log(`✅ Distribution data restored: ${this.playersData.length} players`);
+        }
       }
     } catch (error) {
       console.error('❌ Failed to load message IDs:', error);
