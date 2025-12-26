@@ -514,7 +514,7 @@ export class DistributionManager {
     // Header with season number
     // Use custom season number if provided, otherwise use config
     const seasonNum = parseInt(this.customSeasonNumber || config.seasonNumber) || 156;
-    let output = `# :RGR: SWAP LIST SEASON ${seasonNum} :RGR:\n\n`;
+    let output = `**# :RGR: SWAP LIST SEASON ${seasonNum} :RGR:**\n\n`;
 
     // Display main groups with "to" prefix and player count
     for (const groupName of config.groups.names) {
@@ -523,7 +523,7 @@ export class DistributionManager {
       
       // Show player count only if > 0
       const countText = playerCount > 0 ? ` (${playerCount})` : '';
-      output += `## to ${groupName}${countText}\n`;
+      output += `**## to ${groupName}${countText}**\n`;
       
       if (players.length === 0) {
         output += '_No players_\n\n';
@@ -604,7 +604,7 @@ export class DistributionManager {
         }
       });
 
-      output += `# WILDCARDS (${this.groups.WILDCARDS.length})\n`;
+      output += `**# WILDCARDS (${this.groups.WILDCARDS.length})**\n`;
       this.groups.WILDCARDS.forEach((player, index) => {
         // Get Discord mention and original name
         const discordMention = player.DiscordName || '';
