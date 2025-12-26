@@ -208,7 +208,7 @@ export class DiscordBot {
 
   /**
    * Start schedule checker interval
-   * Checks every 5 minutes for scheduled posts and auto-send mode
+   * Checks every 30 seconds for scheduled posts and auto-send mode
    */
   startScheduleChecker() {
     // Clear existing interval if any
@@ -216,12 +216,12 @@ export class DiscordBot {
       clearInterval(this.scheduleCheckInterval);
     }
 
-    // Check every 5 minutes (300000 ms)
+    // Check every 30 seconds (30000 ms)
     this.scheduleCheckInterval = setInterval(async () => {
       await this.checkAndExecuteSchedule();
-    }, 300000); // 5 minutes
+    }, 30000); // 30 seconds
 
-    console.log('⏰ Schedule checker started (checks every 5 minutes)');
+    console.log('⏰ Schedule checker started (checks every 30 seconds)');
   }
 
   /**
@@ -260,10 +260,10 @@ export class DiscordBot {
       const scheduledDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
       const now = new Date();
 
-      // Check if it's time to send (within 5 minute window for 5-min polling)
+      // Check if it's time to send (within 30 second window for 30-sec polling)
       const timeDiff = scheduledDate.getTime() - now.getTime();
       
-      if (timeDiff <= 0 && timeDiff > -300000) {
+      if (timeDiff <= 0 && timeDiff > -30000) {
         // Time has arrived!
         if (this.scheduledData.autoSend) {
           // Activate Auto-Send monitoring mode
@@ -276,9 +276,9 @@ export class DiscordBot {
           console.log('🎯 Scheduled time reached! Sending distribution...');
           await this.executeScheduledPost();
         }
-      } else if (timeDiff <= -300000) {
-        // More than 5 minutes late - schedule missed
-        console.log('⚠️ Scheduled time has passed by more than 5 minutes, cleaning up');
+      } else if (timeDiff <= -30000) {
+        // More than 30 seconds late - schedule missed
+        console.log('⚠️ Scheduled time has passed by more than 30 seconds, cleaning up');
         this.deleteSchedule();
       }
     } catch (error) {
@@ -1584,7 +1584,7 @@ export class DiscordBot {
             .setDescription(`**Intelligent monitoring will start at ${datetime} UTC**\n\nThe bot will compare data against the current snapshot and auto-post when changes are detected in ${channel}.`)
             .addFields(
               { name: '⏰ Monitoring Starts In', value: `${hoursUntil}h ${minsUntil}m`, inline: true },
-              { name: '🔄 Check Interval', value: 'Every 5 minutes', inline: true },
+              { name: '🔄 Check Interval', value: 'Every 30 seconds', inline: true },
               { name: '📊 Monitored Columns', value: 'B, C, D (ignores E)', inline: true },
               { name: '📺 Channel', value: `${channel}`, inline: true },
               { name: '📸 Snapshot Taken', value: 'Now (at schedule creation)', inline: true }
@@ -1625,7 +1625,7 @@ export class DiscordBot {
                 { name: '⏰ Time Until Post', value: `${result.hoursUntil}h ${result.minsUntil}m`, inline: true },
                 { name: '📺 Channel', value: `${channel}`, inline: true }
               )
-              .setFooter({ text: 'The schedule checker runs every 5 minutes to ensure delivery' })
+              .setFooter({ text: 'The schedule checker runs every 30 seconds to ensure delivery' })
               .setTimestamp();
 
             const buttonRow = new ActionRowBuilder()
