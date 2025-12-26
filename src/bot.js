@@ -33,6 +33,73 @@ export class DiscordBot {
     this.savedState = null; // Last loaded persistent state (from local file or BotState sheet)
   }
 
+  extractDiscordUserIdForDm(player) {
+    if (player && player.discordId && /^\d{17,20}$/.test(String(player.discordId).trim())) {
+      return String(player.discordId).trim();
+    }
+
+    if (player && player.mention) {
+      const match = String(player.mention).match(/<@!?(\d+)>/);
+      if (match) {
+        return match[1];
+      }
+    }
+
+    return null;
+  }
+
+  async sendSwapsLeftDMs(playersList) {
+    console.log(`📨 ========== STARTING DM SENDING PROCESS ==========`);
+    console.log(`📊 Total players in list: ${playersList.length}`);
+
+    let dmsSent = 0;
+    let dmsFailed = 0;
+    let skippedDone = 0;
+    let skippedNoId = 0;
+
+    for (const player of playersList) {
+      console.log(`🔍 Processing player: ${player.name}, isDone: ${player.isDone}, mention: ${player.mention}, discordId: ${player.discordId}`);
+
+      if (player.isDone) {
+        skippedDone++;
+        continue;
+      }
+
+      const userId = this.extractDiscordUserIdForDm(player);
+      if (!userId) {
+        skippedNoId++;
+        console.warn(`⚠️ No Discord ID found for player: ${player.name} (mention: ${player.mention})`);
+        continue;
+      }
+
+      const mentionText = (player.mention && String(player.mention).startsWith('<@'))
+        ? player.mention
+        : `<@${userId}>`;
+
+      try {
+        const user = await this.client.users.fetch(userId);
+
+        const dmMessage = `Hi ${mentionText},\n\n` +
+          `please move to **${player.targetClan}**. Thank you! 🙂\n\n` +
+          `When you have further questions or something else to say, contact <@259019320683298816>, <@698595356952068147> or <@289138975598297088>. 😁\n\n` +
+          `__Keep in mind:__ If you don't move within 18 hours after reset, you will be automatically kicked from the current clan, replaced and must apply on your own to RND.`;
+
+        await user.send(dmMessage);
+        dmsSent++;
+        console.log(`✅ DM sent to ${player.name} (${userId})`);
+      } catch (error) {
+        dmsFailed++;
+        console.error(`❌ Failed to send DM to ${player.name} (${userId}): ${error.message}`);
+      }
+
+      // Small delay to reduce rate-limit risk
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+
+    console.log(`📨 DM Summary: ${dmsSent} sent, ${dmsFailed} failed, ${skippedDone} skipped (done), ${skippedNoId} skipped (no ID)`);
+    return { dmsSent, dmsFailed, skippedDone, skippedNoId };
+  }
+
   async ensureDistributionLoaded() {
     if (this.distributionManager.allPlayers && this.distributionManager.allPlayers.length > 0) {
       return true;
@@ -1891,6 +1958,12 @@ export class DiscordBot {
     this.lastSwapsLeftMessages = [swapsLeftMessage];
     this.swapsLeftPlayersList = result.players;
     this.saveMessageIds();
+
+    const dmResult = await this.sendSwapsLeftDMs(result.players || []);
+    await interaction.followUp({
+      content: `📨 DM Summary: ${dmResult.dmsSent} sent, ${dmResult.dmsFailed} failed, ${dmResult.skippedNoId} skipped (no ID)`,
+      ephemeral: true
+    });
   }
 
   /**
@@ -3259,64 +3332,8 @@ export class DiscordBot {
       this.saveMessageIds();
       
       console.log(`✅ Swaps left list sent (${this.lastSwapsLeftMessages.length} messages)`);
-      
-      // Send DMs to remaining players (only those not marked as done)
-      console.log(`📨 ========== STARTING DM SENDING PROCESS ==========`);
-      console.log(`📊 Total players in list: ${playersList.length}`);
-      
-      let dmsSent = 0;
-      let dmsFailed = 0;
-      let skippedDone = 0;
-      let skippedNoId = 0;
-      
-      for (const player of playersList) {
-        console.log(`🔍 Processing player: ${player.name}, isDone: ${player.isDone}, mention: ${player.mention}`);
-        
-        // Skip if player is already done
-        if (player.isDone) {
-          skippedDone++;
-          console.log(`⏭️ Skipping ${player.name} - already done`);
-          continue;
-        }
-        
-        // Extract Discord ID from mention
-        let userId = null;
-        if (player.mention) {
-          const match = player.mention.match(/<@(\d+)>/);
-          if (match) {
-            userId = match[1];
-            console.log(`✅ Found Discord ID for ${player.name}: ${userId}`);
-          } else {
-            console.warn(`⚠️ Mention exists but no ID found: ${player.mention}`);
-          }
-        }
-        
-        if (!userId) {
-          skippedNoId++;
-          console.warn(`⚠️ No Discord ID found for player: ${player.name}`);
-          continue;
-        }
-        
-        try {
-          console.log(`📤 Attempting to send DM to ${player.name} (${userId})...`);
-          const user = await this.client.users.fetch(userId);
-          
-          // Create DM message
-          const dmMessage = `Hi ${player.mention},\n\n` +
-            `please move to **${player.targetClan}**. Thank you! 🙂\n\n` +
-            `When you have further questions or something else to say, contact <@259019320683298816>, <@698595356952068147> or <@289138975598297088>. 😁\n\n` +
-            `__Keep in mind:__ If you don't move within 18 hours after reset, you will be automatically kicked from the current clan, replaced and must apply on your own to RND.`;
-          
-          await user.send(dmMessage);
-          dmsSent++;
-          console.log(`✅ DM sent to ${player.name} (${userId})`);
-        } catch (error) {
-          dmsFailed++;
-          console.error(`❌ Failed to send DM to ${player.name} (${userId}): ${error.message}`);
-        }
-      }
-      
-      console.log(`📨 DM Summary: ${dmsSent} sent, ${dmsFailed} failed, ${skippedDone} skipped (done), ${skippedNoId} skipped (no ID)`);
+
+      await this.sendSwapsLeftDMs(playersList);
     } catch (error) {
       console.error(`❌ Error in handleSwapsLeft: ${error.message}`);
       const embed = new EmbedBuilder()

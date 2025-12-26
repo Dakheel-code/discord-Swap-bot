@@ -697,7 +697,7 @@ export class DistributionManager {
         
         // Check by Discord-ID in mention
         if (!isDone && player.mention) {
-          const match = player.mention.match(/<@(\d+)>/);
+          const match = player.mention.match(/<@!?(\d+)>/);
           if (match) {
             for (const completed of this.completedPlayers) {
               if (completed.includes(match[1])) {
@@ -743,6 +743,7 @@ export class DistributionManager {
         // Use original name for display, not Discord mention
         const displayName = this.getPlayerName(player);
         const mention = player.DiscordName; // Keep mention for reference
+        const discordId = player['Discord-ID'] || null;
         const identifier = this.getPlayerIdentifier(player);
         
         // Check if marked as done
@@ -771,6 +772,7 @@ export class DistributionManager {
           allPlayers.push({
             name: displayName,
             mention: mention,
+            discordId: discordId,
             targetClan: groupName,
             isDone: isDone
           });
@@ -784,6 +786,7 @@ export class DistributionManager {
         // Use original name for display, not Discord mention
         const displayName = this.getPlayerName(player);
         const mention = player.DiscordName; // Keep mention for reference
+        const discordId = player['Discord-ID'] || null;
         const identifier = this.getPlayerIdentifier(player);
         
         // Check if marked as done
@@ -823,6 +826,7 @@ export class DistributionManager {
           allPlayers.push({
             name: displayName,
             mention: mention,
+            discordId: discordId,
             targetClan: targetClan,
             isDone: isDone
           });
