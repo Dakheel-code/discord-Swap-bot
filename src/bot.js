@@ -1479,13 +1479,17 @@ export class DiscordBot {
         }
       }
       if (currentChunk) chunks.push(currentChunk);
-      
-      // Send first chunk as ephemeral reply
-      await interaction.editReply({ content: chunks[0] });
-      
-      // Send remaining chunks as ephemeral followUps
-      for (let i = 1; i < chunks.length; i++) {
-        await interaction.followUp({ content: chunks[i], ephemeral: true });
+
+      // Keep the deferred reply as a hidden placeholder (Discord can fail to render mentions on edit)
+      await interaction.editReply({ content: '\u200B' });
+
+      // Send ALL chunks as followUps so mentions render consistently
+      for (let i = 0; i < chunks.length; i++) {
+        await interaction.followUp({
+          content: chunks[i],
+          ephemeral: true,
+          allowedMentions: { parse: ['users'] }
+        });
       }
       
       console.log('✅ Distribution shown via Show button (ephemeral)');
