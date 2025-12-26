@@ -707,6 +707,16 @@ export async function loadBotState() {
 
     return null;
   } catch (error) {
+    if (String(error.message || '').includes('Unable to parse range')) {
+      // Sheet/tab likely doesn't exist yet
+      try {
+        await ensureBotStateSheetExists();
+      } catch {
+        // ignore
+      }
+      return null;
+    }
+
     console.warn('ℹ️ No BotState found in Google Sheets:', error.message);
     return null;
   }

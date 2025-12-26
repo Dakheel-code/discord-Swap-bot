@@ -2242,6 +2242,22 @@ export class DiscordBot {
     this.distributionManager.distribute(this.playersData, columnName, seasonNumber);
     const summary = this.distributionManager.getSummary();
 
+    this.lastChannelId = interaction.channel?.id || this.lastChannelId;
+
+    const stateToSave = {
+      channelId: this.lastChannelId,
+      distributionMessageIds: this.lastDistributionMessages.map(msg => msg.id),
+      swapsLeftMessageIds: this.lastSwapsLeftMessages.map(msg => msg.id),
+      sortColumn: this.distributionManager.sortColumn || 'Trophies',
+      seasonNumber: this.distributionManager.customSeasonNumber || seasonNumber || null,
+      completedPlayers: Array.from(this.distributionManager.completedPlayers),
+      timestamp: Date.now()
+    };
+
+    saveBotState(stateToSave)
+      .then(() => console.log('💾 Saved BotState to Google Sheets (on /swap)'))
+      .catch((error) => console.warn('⚠️ Failed to save BotState to Google Sheets (on /swap):', error.message));
+
     // Create embed
     const embed = new EmbedBuilder()
       .setColor(0x00ff00)
