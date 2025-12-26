@@ -112,6 +112,46 @@ export class DiscordBot {
       .replace(/\r/g, '\n');
   }
 
+  splitTextByLinesToChunks(text, maxLength = 2000) {
+    const chunks = [];
+    let currentChunk = '';
+    const lines = String(text).split('\n');
+
+    for (const line of lines) {
+      if (currentChunk.length + line.length + 1 > maxLength) {
+        if (currentChunk) chunks.push(currentChunk);
+        currentChunk = line + '\n';
+      } else {
+        currentChunk += line + '\n';
+      }
+    }
+
+    if (currentChunk) chunks.push(currentChunk);
+    return chunks;
+  }
+
+  splitDistributionToChunks(text, maxLength = 2000) {
+    const safeText = this.sanitizeMessageContent(text);
+
+    const otlIndex = safeText.indexOf('**## to OTL');
+    const rndIndex = safeText.indexOf('**## to RND');
+
+    if (otlIndex === -1 || rndIndex === -1) {
+      return this.splitTextByLinesToChunks(safeText, maxLength);
+    }
+
+    const part1 = safeText.slice(0, otlIndex);
+    const part2 = safeText.slice(otlIndex, rndIndex);
+    const part3 = safeText.slice(rndIndex);
+
+    const chunks = [];
+    chunks.push(...this.splitTextByLinesToChunks(part1, maxLength));
+    chunks.push(...this.splitTextByLinesToChunks(part2, maxLength));
+    chunks.push(...this.splitTextByLinesToChunks(part3, maxLength));
+
+    return chunks.filter(c => c && c.trim().length > 0);
+  }
+
   async ensureDistributionLoaded() {
     if (this.distributionManager.allPlayers && this.distributionManager.allPlayers.length > 0) {
       return true;
@@ -3523,27 +3563,43 @@ export class DiscordBot {
     const safeText = this.sanitizeMessageContent(text);
     console.log(`📝 Text length: ${safeText.length} characters`);
     console.log(`📝 First 200 chars: ${safeText.substring(0, 200)}`);
-    
-    const maxLength = 2000;
-    const chunks = [];
-    
-    let currentChunk = '';
-    const lines = safeText.split('\n');
 
-    for (const line of lines) {
-      if (currentChunk.length + line.length + 1 > maxLength) {
-        chunks.push(currentChunk);
-        currentChunk = line + '\n';
-      } else {
-        currentChunk += line + '\n';
+    const chunks = this.splitDistributionToChunks(safeText, 2000);
+
+    console.log(`📝 Split into ${chunks.length} chunks`);
+
+    if (chunks.length === 0) {
+      console.warn('⚠️ No chunks produced for distribution update');
+      return;
+    }
+
+    const channel = this.lastDistributionMessages[0]?.channel;
+    if (!channel) {
+      console.warn('⚠️ No channel found for distribution messages update');
+      return;
+    }
+
+    while (this.lastDistributionMessages.length < chunks.length) {
+      try {
+        const newMsg = await channel.send({
+          content: chunks[this.lastDistributionMessages.length],
+          allowedMentions: { parse: ['users'] }
+        });
+        this.lastDistributionMessages.push(newMsg);
+      } catch (error) {
+        console.error('❌ Failed to send additional distribution message:', error.message);
+        break;
       }
     }
 
-    if (currentChunk) {
-      chunks.push(currentChunk);
+    while (this.lastDistributionMessages.length > chunks.length) {
+      const extra = this.lastDistributionMessages.pop();
+      try {
+        await extra.delete();
+      } catch (error) {
+        console.warn('⚠️ Failed to delete extra distribution message:', error.message);
+      }
     }
-
-    console.log(`📝 Split into ${chunks.length} chunks`);
 
     // Update existing messages or send new ones if needed
     for (let i = 0; i < chunks.length; i++) {
@@ -3562,6 +3618,8 @@ export class DiscordBot {
         console.log(`⚠️ No message ${i + 1} to update (only ${this.lastDistributionMessages.length} messages saved)`);
       }
     }
+
+    this.saveMessageIds();
   }
 
   /**
@@ -3642,25 +3700,10 @@ export class DiscordBot {
    */
   async sendLongMessage(channel, text, saveMessages = false, addButtons = false) {
     const maxLength = 2000;
-    const chunks = [];
-
     const safeText = this.sanitizeMessageContent(text);
-    
-    let currentChunk = '';
-    const lines = safeText.split('\n');
-
-    for (const line of lines) {
-      if (currentChunk.length + line.length + 1 > maxLength) {
-        chunks.push(currentChunk);
-        currentChunk = line + '\n';
-      } else {
-        currentChunk += line + '\n';
-      }
-    }
-
-    if (currentChunk) {
-      chunks.push(currentChunk);
-    }
+    const chunks = saveMessages
+      ? this.splitDistributionToChunks(safeText, maxLength)
+      : this.splitTextByLinesToChunks(safeText, maxLength);
 
     const sentMessages = [];
 
