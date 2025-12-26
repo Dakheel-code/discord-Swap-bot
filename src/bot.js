@@ -1375,9 +1375,11 @@ export class DiscordBot {
       this.distributionManager.allPlayers = [];
       this.distributionManager.groups = { RGR: [], OTL: [], RND: [] };
       this.distributionManager.wildcards = [];
+      this.distributionManager.completedPlayers = new Set();
       this.playersData = [];
       this.lastDistributionMessages = [];
       this.lastSwapsLeftMessages = [];
+      this.savedState = null;
       
       // Delete saved message IDs
       const messagesFilePath = './distribution_messages.json';
@@ -1413,9 +1415,11 @@ export class DiscordBot {
       this.distributionManager.allPlayers = [];
       this.distributionManager.groups = { RGR: [], OTL: [], RND: [] };
       this.distributionManager.wildcards = [];
+      this.distributionManager.completedPlayers = new Set();
       this.playersData = [];
       this.lastDistributionMessages = [];
       this.lastSwapsLeftMessages = [];
+      this.savedState = null;
       
       // Delete saved message IDs
       const messagesFilePath = './distribution_messages.json';
