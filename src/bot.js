@@ -82,10 +82,11 @@ export class DiscordBot {
         swapsLeftMessageIds: this.lastSwapsLeftMessages.map(msg => msg.id),
         sortColumn: this.distributionManager.sortColumn || 'Trophies',
         seasonNumber: this.distributionManager.customSeasonNumber || null,
+        completedPlayers: Array.from(this.distributionManager.completedPlayers),
         timestamp: Date.now()
       };
       fs.writeFileSync(this.messagesFilePath, JSON.stringify(data, null, 2));
-      console.log('💾 Saved distribution and swapsleft message IDs with sortColumn and seasonNumber');
+      console.log('💾 Saved distribution data: messages, sortColumn, seasonNumber, and completedPlayers');
     } catch (error) {
       console.error('❌ Failed to save message IDs:', error);
     }
@@ -144,6 +145,13 @@ export class DiscordBot {
           const seasonNumber = data.seasonNumber || null;
           
           this.distributionManager.distribute(this.playersData, sortColumn, seasonNumber);
+          
+          // Restore completedPlayers (checkmarks)
+          if (data.completedPlayers && Array.isArray(data.completedPlayers)) {
+            this.distributionManager.completedPlayers = new Set(data.completedPlayers);
+            console.log(`✅ Restored ${data.completedPlayers.length} completed players (checkmarks)`);
+          }
+          
           console.log(`✅ Distribution data restored: ${this.playersData.length} players, sortColumn: ${sortColumn}, seasonNumber: ${seasonNumber}`);
         }
       }
