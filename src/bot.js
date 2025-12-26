@@ -1525,22 +1525,8 @@ export class DiscordBot {
     
     try {
       const formattedText = this.distributionManager.getFormattedDistribution();
-      
-      // Split into chunks if needed (Discord limit: 2000 chars)
-      const maxLength = 2000;
-      const chunks = [];
-      let currentChunk = '';
-      const lines = formattedText.split('\n');
-      
-      for (const line of lines) {
-        if ((currentChunk + line + '\n').length > maxLength) {
-          if (currentChunk) chunks.push(currentChunk);
-          currentChunk = line + '\n';
-        } else {
-          currentChunk += line + '\n';
-        }
-      }
-      if (currentChunk) chunks.push(currentChunk);
+
+      const chunks = this.splitDistributionToChunks(formattedText, 2000);
 
       // Keep the deferred reply as a hidden placeholder (Discord can fail to render mentions on edit)
       await interaction.editReply({ content: '\u200B' });
@@ -2445,32 +2431,22 @@ export class DiscordBot {
       // Don't send to channel - just show preview and admin controls (ephemeral)
       // Send preview as ephemeral
       const header = '**Preview:**\n\n';
-      const maxLength = 2000 - header.length; // Reserve space for header
-      const chunks = [];
-      let currentChunk = '';
-      const lines = formattedText.split('\n');
-      
-      for (const line of lines) {
-        if ((currentChunk + line + '\n').length > maxLength) {
-          if (currentChunk) chunks.push(currentChunk);
-          currentChunk = line + '\n';
-        } else {
-          currentChunk += line + '\n';
-        }
-      }
-      if (currentChunk) chunks.push(currentChunk);
+
+      const chunks = this.splitDistributionToChunks(formattedText, 2000 - header.length);
       
       // Send first chunk with header
       await interaction.followUp({ 
-        content: header + chunks[0], 
-        ephemeral: true 
+        content: header + (chunks[0] || ''), 
+        ephemeral: true,
+        allowedMentions: { parse: ['users'] }
       });
       
       // Send remaining chunks
       for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp({ 
           content: chunks[i], 
-          ephemeral: true 
+          ephemeral: true,
+          allowedMentions: { parse: ['users'] }
         });
       }
       
@@ -3573,39 +3549,20 @@ export class DiscordBot {
       return;
     }
 
-    const channel = this.lastDistributionMessages[0]?.channel;
-    if (!channel) {
-      console.warn('⚠️ No channel found for distribution messages update');
-      return;
+    if (chunks.length > this.lastDistributionMessages.length) {
+      console.warn(
+        `⚠️ Distribution now needs ${chunks.length} message(s) but only ${this.lastDistributionMessages.length} are saved. ` +
+        `Not sending new messages automatically. Please run /swap to recreate distribution messages.`
+      );
     }
 
-    while (this.lastDistributionMessages.length < chunks.length) {
-      try {
-        const newMsg = await channel.send({
-          content: chunks[this.lastDistributionMessages.length],
-          allowedMentions: { parse: ['users'] }
-        });
-        this.lastDistributionMessages.push(newMsg);
-      } catch (error) {
-        console.error('❌ Failed to send additional distribution message:', error.message);
-        break;
-      }
-    }
-
-    while (this.lastDistributionMessages.length > chunks.length) {
-      const extra = this.lastDistributionMessages.pop();
-      try {
-        await extra.delete();
-      } catch (error) {
-        console.warn('⚠️ Failed to delete extra distribution message:', error.message);
-      }
-    }
+    const messagesToUpdate = Math.min(chunks.length, this.lastDistributionMessages.length);
 
     // Update existing messages or send new ones if needed
-    for (let i = 0; i < chunks.length; i++) {
+    for (let i = 0; i < messagesToUpdate; i++) {
       if (i < this.lastDistributionMessages.length) {
         try {
-          console.log(`✅ Updating message ${i + 1}/${chunks.length}`);
+          console.log(`✅ Updating message ${i + 1}/${messagesToUpdate}`);
           await this.lastDistributionMessages[i].edit({
             content: chunks[i],
             allowedMentions: { parse: ['users'] }
@@ -3614,8 +3571,6 @@ export class DiscordBot {
         } catch (error) {
           console.error(`❌ Failed to edit message ${i + 1}:`, error.message);
         }
-      } else {
-        console.log(`⚠️ No message ${i + 1} to update (only ${this.lastDistributionMessages.length} messages saved)`);
       }
     }
 
