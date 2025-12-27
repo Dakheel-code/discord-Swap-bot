@@ -29,7 +29,7 @@ export class DistributionManager {
   distribute(players, columnName, seasonNumber = null) {
     this.allPlayers = players;
     this.sortColumn = columnName;
-    this.customSeasonNumber = seasonNumber; // Store custom season number
+    this.customSeasonNumber = seasonNumber;
 
     // Reset groups and WILDCARDS
     this.groups = {
@@ -42,115 +42,97 @@ export class DistributionManager {
     // Clear previous wildcard info
     this.wildcardInfo.clear();
     
-    // Process players with Action column
-    const playersWithAction = [];
-    const availablePlayers = [];
-    
     console.log(`🔍 distribute: Processing ${players.length} players`);
-    console.log(`🔍 First player keys:`, players.length > 0 ? Object.keys(players[0]) : 'No players');
     
-    players.forEach((player, index) => {
-      const action = player.Action ? player.Action.trim() : '';
-      const identifier = this.getPlayerIdentifier(player);
-      
-      if (index < 3) {
-        console.log(`🔍 Player ${index + 1}: Name="${identifier}", Action="${action}"`);
-      }
-      
-      if (action) {
-        // Player has an action - add to WILDCARDS
-        console.log(`✅ Adding to WILDCARDS: ${identifier} (Action: ${action})`);
-        playersWithAction.push(player);
-        
-        // Store wildcard info
-        if (action === 'Hold') {
-          // Get player's current clan
-          const currentClan = this.getPlayerClan(player);
-          this.wildcardInfo.set(identifier, {
-            type: 'excluded',
-            target: currentClan || 'Unknown'
-          });
-          // Add to excludedPlayers set for count
-          this.excludedPlayers.add(identifier);
-        } else if (action === 'RGR' || action === 'OTL' || action === 'RND') {
-          // Check if Action matches current clan
-          const currentClan = this.getPlayerClan(player);
-          
-          if (currentClan === action) {
-            // Player stays in same clan
-            this.wildcardInfo.set(identifier, {
-              type: 'stay',
-              target: action
-            });
-          } else {
-            // Player moves to different clan
-            this.wildcardInfo.set(identifier, {
-              type: 'manual',
-              target: action
-            });
-          }
-        } else {
-          // Unknown action
-          this.wildcardInfo.set(identifier, {
-            type: 'other',
-            target: action
-          });
-        }
-      } else {
-        // No action - available for distribution
-        availablePlayers.push(player);
-      }
-    });
-    
-    console.log(`📊 After processing:`);
-    console.log(`  - playersWithAction: ${playersWithAction.length}`);
-    console.log(`  - availablePlayers: ${availablePlayers.length}`);
-    
-    // Add players with actions to WILDCARDS
-    this.groups.WILDCARDS = playersWithAction;
-    console.log(`📊 WILDCARDS set to ${this.groups.WILDCARDS.length} players`);
-
-    // Sort available players by the specified column (descending)
-    const sortedPlayers = [...availablePlayers].sort((a, b) => {
+    // Sort ALL players by trophies first
+    const sortedPlayers = [...players].sort((a, b) => {
       const valueA = this.parseValue(a[columnName]);
       const valueB = this.parseValue(b[columnName]);
       return valueB - valueA; // Descending order
     });
-
-    // Distribute players in order: RGR -> OTL -> RND
-    const groupNames = config.groups.names;
-    let currentGroupIndex = 0;
-    let groupCounts = { RGR: 0, OTL: 0, RND: 0 }; // Track actual count including skipped
-
-    for (const player of sortedPlayers) {
-      // Get player's clan from column E (Clan, Team, Guild, etc.)
-      const playerClan = this.getPlayerClan(player);
+    
+    // Count Hold players per clan first
+    const holdCountPerClan = { RGR: 0, OTL: 0, RND: 0 };
+    
+    sortedPlayers.forEach(player => {
+      const action = player.Action ? player.Action.trim() : '';
+      const currentClan = this.getPlayerClan(player);
       
-      // Find next available group (based on count, not array length)
-      while (groupCounts[groupNames[currentGroupIndex]] >= config.groups.maxPlayersPerGroup) {
-        currentGroupIndex++;
-        if (currentGroupIndex >= groupNames.length) {
-          console.warn('⚠️ All groups are full, some players cannot be assigned');
-          break;
-        }
+      if (action === 'Hold' && holdCountPerClan[currentClan] !== undefined) {
+        holdCountPerClan[currentClan]++;
       }
-
-      if (currentGroupIndex < groupNames.length) {
-        const targetGroup = groupNames[currentGroupIndex];
+    });
+    
+    console.log(`📊 Hold count per clan:`, holdCountPerClan);
+    
+    // Initialize counters with Hold count
+    let rgrCount = holdCountPerClan.RGR;
+    let otlCount = holdCountPerClan.OTL;
+    let rndCount = holdCountPerClan.RND;
+    
+    // Process all players
+    const playersWithAction = [];
+    
+    sortedPlayers.forEach((player, index) => {
+      const action = player.Action ? player.Action.trim() : '';
+      const identifier = this.getPlayerIdentifier(player);
+      const currentClan = this.getPlayerClan(player);
+      
+      if (action === 'Hold') {
+        // Hold - stays in current clan, occupies a slot
+        playersWithAction.push(player);
+        this.wildcardInfo.set(identifier, {
+          type: 'excluded',
+          target: currentClan || 'Unknown'
+        });
+        this.excludedPlayers.add(identifier);
         
-        // Increment count regardless
-        groupCounts[targetGroup]++;
+      } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
+        // Manual move - add to WILDCARDS
+        playersWithAction.push(player);
         
-        // Check if player's clan matches the target group
-        if (playerClan && playerClan.toUpperCase() === targetGroup.toUpperCase()) {
-          console.log(`⏭️ Skipping display of ${this.getPlayerName(player)} in ${targetGroup} - already in clan ${playerClan}`);
-          // Don't add to group array (won't be displayed), but count is incremented
+        if (currentClan === action) {
+          this.wildcardInfo.set(identifier, {
+            type: 'stay',
+            target: action
+          });
         } else {
-          // Add player to group (will be displayed)
-          this.groups[targetGroup].push(player);
+          this.wildcardInfo.set(identifier, {
+            type: 'manual',
+            target: action
+          });
+        }
+        
+      } else {
+        // Automatic distribution
+        let targetClan = null;
+        
+        if (rgrCount < 50) {
+          targetClan = 'RGR';
+          rgrCount++;
+        } else if (otlCount < 50) {
+          targetClan = 'OTL';
+          otlCount++;
+        } else {
+          targetClan = 'RND';
+          rndCount++;
+        }
+        
+        // Only add to group if player needs to move
+        if (currentClan !== targetClan) {
+          this.groups[targetClan].push(player);
         }
       }
-    }
+    });
+    
+    // Set WILDCARDS
+    this.groups.WILDCARDS = playersWithAction;
+    
+    console.log(`📊 Final distribution:`);
+    console.log(`  - RGR: ${this.groups.RGR.length} moving (${rgrCount} total)`);
+    console.log(`  - OTL: ${this.groups.OTL.length} moving (${otlCount} total)`);
+    console.log(`  - RND: ${this.groups.RND.length} moving (${rndCount} total)`);
+    console.log(`  - WILDCARDS: ${this.groups.WILDCARDS.length}`);
 
     return this.groups;
   }

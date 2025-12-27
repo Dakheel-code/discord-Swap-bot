@@ -3479,12 +3479,26 @@ export class DiscordBot {
         return;
       }
 
-      // Re-distribute with latest data
+      // Re-distribute with latest data (NEW LOGIC: max 50 per clan, considering manual moves)
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       const seasonNumber = this.lastSeasonNumber || null;
       
-      console.log(`🔄 Re-distributing with column: ${sortColumn}, season: ${seasonNumber || 'N/A'}`);
+      console.log(`🔄 Re-distributing with NEW LOGIC: max 50 per clan`);
+      console.log(`   Column: ${sortColumn}, Season: ${seasonNumber || 'N/A'}`);
       this.distributionManager.distribute(this.playersData, sortColumn, seasonNumber);
+      
+      // Validate distribution (check if any clan exceeds 50)
+      const validation = this.validateDistribution();
+      if (!validation.valid) {
+        console.warn('⚠️ Distribution validation failed:', validation.errors);
+        const embed = new EmbedBuilder()
+          .setColor(0xff9900)
+          .setTitle('⚠️ Distribution Warning')
+          .setDescription(`Distribution updated but has warnings:\n\n${validation.errors.join('\n')}`)
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+      }
 
       // Get formatted distribution
       const formattedText = this.distributionManager.getFormattedDistribution();
@@ -3683,6 +3697,73 @@ export class DiscordBot {
   /**
    * Send long message in chunks
    */
+  /**
+   * Validate distribution to ensure no clan exceeds 50 players
+   * @returns {Object} { valid: boolean, errors: Array<string> }
+   */
+  validateDistribution() {
+    const errors = [];
+    const warnings = [];
+    
+    // Count total players per clan (including Hold and manual moves)
+    const clanCounts = { RGR: 0, OTL: 0, RND: 0 };
+    
+    // Count players with actions
+    if (this.distributionManager.groups.WILDCARDS) {
+      this.distributionManager.groups.WILDCARDS.forEach(player => {
+        const action = player.Action ? player.Action.trim() : '';
+        const currentClan = this.distributionManager.getPlayerClan(player);
+        
+        if (action === 'Hold' && clanCounts[currentClan] !== undefined) {
+          clanCounts[currentClan]++;
+        } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
+          if (clanCounts[action] !== undefined) {
+            clanCounts[action]++;
+          }
+        }
+      });
+    }
+    
+    // Count automatic distribution
+    ['RGR', 'OTL', 'RND'].forEach(clan => {
+      if (this.distributionManager.groups[clan]) {
+        // Count players who need to move to this clan
+        const movingTo = this.distributionManager.groups[clan].length;
+        
+        // Count players already in this clan (not moving)
+        const stayingInClan = this.playersData.filter(p => {
+          const playerClan = this.distributionManager.getPlayerClan(p);
+          const action = p.Action ? p.Action.trim() : '';
+          return playerClan === clan && !action; // No action means automatic distribution
+        }).length;
+        
+        clanCounts[clan] += movingTo;
+      }
+    });
+    
+    // Check if any clan exceeds 50
+    Object.entries(clanCounts).forEach(([clan, count]) => {
+      if (count > 50) {
+        errors.push(`❌ **${clan}** has ${count} players (exceeds limit of 50)`);
+      } else if (count === 50) {
+        warnings.push(`✅ **${clan}** has exactly 50 players`);
+      } else {
+        warnings.push(`✅ **${clan}** has ${count} players`);
+      }
+    });
+    
+    console.log('📊 Distribution validation:');
+    console.log(`   RGR: ${clanCounts.RGR}/50`);
+    console.log(`   OTL: ${clanCounts.OTL}/50`);
+    console.log(`   RND: ${clanCounts.RND}/50`);
+    
+    return {
+      valid: errors.length === 0,
+      errors: errors.length > 0 ? errors : warnings,
+      counts: clanCounts
+    };
+  }
+
   async sendLongMessage(channel, text, saveMessages = false, addButtons = false) {
     const maxLength = 2000;
     const safeText = this.sanitizeMessageContent(text);
