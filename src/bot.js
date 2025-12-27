@@ -3334,7 +3334,9 @@ export class DiscordBot {
    * Handle /done_temp command - Temporary solution with fixed message IDs
    */
   async handleDoneTemp(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ ephemeral: true });
+    }
     
     // Fixed message IDs
     const FIXED_CHANNEL_ID = '1037060250701922405';
