@@ -500,7 +500,7 @@ export class DistributionManager {
       if (value === null || value === undefined) return '';
       return String(value).replace(/[\\`*_~|]/g, '\\$&');
     };
-    let output = `**# :RGR: SWAP LIST SEASON ${seasonNum} :RGR:**\n\n`;
+    let output = `**# <:RGR:1238937013940523008> SWAP LIST SEASON ${seasonNum} <:RGR:1238937013940523008>**\n\n`;
 
     // Display main groups with "to" prefix and player count
     for (const groupName of config.groups.names) {
