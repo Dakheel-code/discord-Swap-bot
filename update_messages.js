@@ -16,7 +16,7 @@ const MESSAGE_IDS = [
   '1454308036075065396'
 ];
 const CHANNEL_ID = '1037060250701922405';
-const SEASON_NUMBER = 157;
+const SEASON_NUMBER = 158;
 
 async function generateCorrectDistribution() {
   await initializeSheetsClient();
@@ -31,19 +31,23 @@ async function generateCorrectDistribution() {
     return trophiesB - trophiesA;
   });
   
-  // حساب عدد اللاعبين في Hold لكل كلان
-  const holdCountPerClan = { RGR: 0, OTL: 0, RND: 0 };
+  // حساب عدد اللاعبين في Hold والانتقالات اليدوية لكل كلان
+  const manualCountPerClan = { RGR: 0, OTL: 0, RND: 0 };
   
   sortedPlayers.forEach(player => {
     const currentClan = player.Clan || 'Unknown';
     const action = (player.Action || '').trim();
     
-    if (action === 'Hold' && holdCountPerClan[currentClan] !== undefined) {
-      holdCountPerClan[currentClan]++;
+    if (action === 'Hold' && manualCountPerClan[currentClan] !== undefined) {
+      // Hold يبقى في كلانه الحالي
+      manualCountPerClan[currentClan]++;
+    } else if (action && ['RGR', 'OTL', 'RND'].includes(action) && manualCountPerClan[action] !== undefined) {
+      // انتقال يدوي إلى كلان محدد
+      manualCountPerClan[action]++;
     }
   });
   
-  console.log('📊 Hold count per clan:', holdCountPerClan);
+  console.log('📊 Manual moves count per clan:', manualCountPerClan);
   
   // التوزيع النهائي
   const distribution = {
@@ -53,9 +57,9 @@ async function generateCorrectDistribution() {
     WILDCARDS: []
   };
   
-  let rgrCount = holdCountPerClan.RGR;
-  let otlCount = holdCountPerClan.OTL;
-  let rndCount = holdCountPerClan.RND;
+  let rgrCount = manualCountPerClan.RGR;
+  let otlCount = manualCountPerClan.OTL;
+  let rndCount = manualCountPerClan.RND;
   
   sortedPlayers.forEach((player, index) => {
     const currentClan = player.Clan || 'Unknown';
@@ -121,7 +125,7 @@ function formatDistribution(distribution) {
   const messages = [];
   
   // الرسالة الأولى: RGR فقط
-  let message1 = `**# :RGR: SWAP LIST SEASON ${SEASON_NUMBER} :RGR:**\n\n`;
+  let message1 = `**# <:RGR:1238937013940523008> SWAP LIST SEASON ${SEASON_NUMBER} <:RGR:1238937013940523008>**\n\n`;
   message1 += `**## to RGR (${distribution.RGR.length})**\n`;
   if (distribution.RGR.length > 0) {
     distribution.RGR.forEach(p => {

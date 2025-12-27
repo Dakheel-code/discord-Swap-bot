@@ -3582,33 +3582,36 @@ export class DiscordBot {
     console.log(`📝 updateDistributionMessages: Updating ${this.lastDistributionMessages.length} messages`);
     const safeText = this.sanitizeMessageContent(text);
     console.log(`📝 Text length: ${safeText.length} characters`);
-    console.log(`📝 First 200 chars: ${safeText.substring(0, 200)}`);
 
-    const chunks = this.splitDistributionToChunks(safeText, 2000);
+    // Split into 3 fixed messages: RGR, OTL, RND+WILDCARDS+Footer
+    const messages = this.splitIntoThreeMessages(safeText);
 
-    console.log(`📝 Split into ${chunks.length} chunks`);
+    console.log(`📝 Split into ${messages.length} messages`);
+    console.log(`   Message 1 (RGR): ${messages[0]?.length || 0} chars`);
+    console.log(`   Message 2 (OTL): ${messages[1]?.length || 0} chars`);
+    console.log(`   Message 3 (RND+Footer): ${messages[2]?.length || 0} chars`);
 
-    if (chunks.length === 0) {
-      console.warn('⚠️ No chunks produced for distribution update');
+    if (messages.length === 0) {
+      console.warn('⚠️ No messages produced for distribution update');
       return;
     }
 
-    if (chunks.length > this.lastDistributionMessages.length) {
+    if (messages.length !== 3 || this.lastDistributionMessages.length !== 3) {
       console.warn(
-        `⚠️ Distribution now needs ${chunks.length} message(s) but only ${this.lastDistributionMessages.length} are saved. ` +
-        `Not sending new messages automatically. Please run /swap to recreate distribution messages.`
+        `⚠️ Expected 3 messages but got ${messages.length} messages and ${this.lastDistributionMessages.length} saved messages. ` +
+        `Please run /swap to recreate distribution messages.`
       );
     }
 
-    const messagesToUpdate = Math.min(chunks.length, this.lastDistributionMessages.length);
+    const messagesToUpdate = Math.min(messages.length, this.lastDistributionMessages.length);
 
-    // Update existing messages or send new ones if needed
+    // Update existing messages
     for (let i = 0; i < messagesToUpdate; i++) {
       if (i < this.lastDistributionMessages.length) {
         try {
           console.log(`✅ Updating message ${i + 1}/${messagesToUpdate}`);
           await this.lastDistributionMessages[i].edit({
-            content: chunks[i],
+            content: messages[i],
             allowedMentions: { parse: ['users'] }
           });
           console.log(`✅ Message ${i + 1} updated successfully`);
@@ -3619,6 +3622,39 @@ export class DiscordBot {
     }
 
     this.saveMessageIds();
+  }
+
+  /**
+   * Split distribution text into 3 fixed messages
+   */
+  splitIntoThreeMessages(text) {
+    const messages = [];
+    
+    // Find section markers
+    const rgrStart = text.indexOf('**# ');
+    const otlStart = text.indexOf('**## to OTL');
+    const rndStart = text.indexOf('**## to RND');
+    const wildcardsStart = text.indexOf('**# WILDCARDS');
+    const footerStart = text.indexOf('---\n\nDone:');
+    
+    if (rgrStart === -1 || otlStart === -1 || rndStart === -1) {
+      console.warn('⚠️ Could not find section markers, using fallback split');
+      return this.splitDistributionToChunks(text, 2000);
+    }
+    
+    // Message 1: Title + RGR
+    let message1 = text.slice(rgrStart, otlStart).trim();
+    messages.push(message1);
+    
+    // Message 2: OTL only
+    let message2 = text.slice(otlStart, rndStart).trim();
+    messages.push(message2);
+    
+    // Message 3: RND + WILDCARDS + Footer
+    let message3 = text.slice(rndStart).trim();
+    messages.push(message3);
+    
+    return messages;
   }
 
   /**
