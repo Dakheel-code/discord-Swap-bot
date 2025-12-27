@@ -18,4 +18,8 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('refresh')
     .setDescription('Refresh the last posted distribution message with latest sheet data'),
+
+  new SlashCommandBuilder()
+    .setName('done_temp')
+    .setDescription('Temporary solution: Mark players as done by directly editing the 3 messages'),
 ];

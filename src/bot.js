@@ -742,6 +742,10 @@ export class DiscordBot {
           await this.handleRefresh(interaction);
           break;
 
+        case 'done_temp':
+          await this.handleDoneTemp(interaction);
+          break;
+
         default:
           await interaction.editReply('❌ Unknown command');
       }
@@ -3324,6 +3328,58 @@ export class DiscordBot {
   async handleDone(interaction) {
     // Reuse the same logic as handleMarkDoneButton
     await this.handleMarkDoneButton(interaction);
+  }
+
+  /**
+   * Handle /done_temp command - Temporary solution with fixed message IDs
+   */
+  async handleDoneTemp(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    // Fixed message IDs
+    const FIXED_CHANNEL_ID = '1037060250701922405';
+    const FIXED_MESSAGE_IDS = [
+      '1454308028223590422', // Message 1: RGR
+      '1454308033432912033', // Message 2: OTL
+      '1454308036075065396'  // Message 3: RND + WILDCARDS
+    ];
+    
+    try {
+      // Load distribution if not loaded
+      const ok = await this.ensureDistributionLoaded();
+      if (!ok) {
+        await interaction.editReply('⚠️ No swap found. Please run `/swap` first.');
+        return;
+      }
+      
+      // Temporarily override lastDistributionMessages with fixed IDs
+      const channel = await this.client.channels.fetch(FIXED_CHANNEL_ID);
+      this.lastDistributionMessages = [];
+      this.lastChannelId = FIXED_CHANNEL_ID;
+      
+      for (const messageId of FIXED_MESSAGE_IDS) {
+        try {
+          const message = await channel.messages.fetch(messageId);
+          this.lastDistributionMessages.push(message);
+        } catch (error) {
+          console.warn(`⚠️ Could not fetch message ${messageId}`);
+        }
+      }
+      
+      if (this.lastDistributionMessages.length !== 3) {
+        await interaction.editReply(`⚠️ Could not load all 3 messages. Found ${this.lastDistributionMessages.length}/3`);
+        return;
+      }
+      
+      console.log('✅ Loaded 3 fixed messages for /done_temp');
+      
+      // Now call the regular done handler
+      await this.handleMarkDoneButton(interaction);
+      
+    } catch (error) {
+      console.error('❌ Error in handleDoneTemp:', error);
+      await interaction.editReply('❌ Failed to load messages');
+    }
   }
 
   /**
