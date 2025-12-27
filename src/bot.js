@@ -3725,40 +3725,34 @@ export class DiscordBot {
   /**
    * Update existing distribution messages
    */
-  async updateDistributionMessages(text) {
+  async updateDistributionMessages(messagesArray) {
     console.log(`📝 updateDistributionMessages: Updating ${this.lastDistributionMessages.length} messages`);
-    const safeText = this.sanitizeMessageContent(text);
-    console.log(`📝 Text length: ${safeText.length} characters`);
+    
+    // messagesArray is now an array from getFormattedDistribution()
+    if (!Array.isArray(messagesArray)) {
+      console.error('❌ messagesArray is not an array');
+      return;
+    }
 
-    // Split into 3 fixed messages: RGR, OTL, RND+WILDCARDS+Footer
-    const messages = this.splitIntoThreeMessages(safeText);
+    console.log(`📝 Received ${messagesArray.length} messages to update`);
 
-    console.log(`📝 Split into ${messages.length} messages`);
-    console.log(`   Message 1 (RGR): ${messages[0]?.length || 0} chars`);
-    console.log(`   Message 2 (OTL): ${messages[1]?.length || 0} chars`);
-    console.log(`   Message 3 (RND+Footer): ${messages[2]?.length || 0} chars`);
-
-    if (messages.length === 0) {
+    if (messagesArray.length === 0) {
       console.warn('⚠️ No messages produced for distribution update');
       return;
     }
 
-    if (messages.length !== 3 || this.lastDistributionMessages.length !== 3) {
-      console.warn(
-        `⚠️ Expected 3 messages but got ${messages.length} messages and ${this.lastDistributionMessages.length} saved messages. ` +
-        `Please run /swap to recreate distribution messages.`
-      );
-    }
+    // Sanitize each message
+    const sanitizedMessages = messagesArray.map(msg => this.sanitizeMessageContent(msg));
 
-    const messagesToUpdate = Math.min(messages.length, this.lastDistributionMessages.length);
+    const messagesToUpdate = Math.min(sanitizedMessages.length, this.lastDistributionMessages.length);
 
     // Update existing messages
     for (let i = 0; i < messagesToUpdate; i++) {
       if (i < this.lastDistributionMessages.length) {
         try {
-          console.log(`✅ Updating message ${i + 1}/${messagesToUpdate}`);
+          console.log(`✅ Updating message ${i + 1}/${messagesToUpdate} (${sanitizedMessages[i].length} chars)`);
           await this.lastDistributionMessages[i].edit({
-            content: messages[i],
+            content: sanitizedMessages[i],
             allowedMentions: { parse: ['users'] }
           });
           console.log(`✅ Message ${i + 1} updated successfully`);
@@ -3947,13 +3941,7 @@ export class DiscordBot {
     };
   }
 
-  async sendLongMessage(channel, text, saveMessages = false, addButtons = false) {
-    const maxLength = 2000;
-    const safeText = this.sanitizeMessageContent(text);
-    const chunks = saveMessages
-      ? this.splitDistributionToChunks(safeText, maxLength)
-      : this.splitTextByLinesToChunks(safeText, maxLength);
-
+  async sendLongMessage(channel, textOrArray, saveMessages = false, isDistribution = false) {
     const sentMessages = [];
 
     // Clear previous messages if saving new ones
@@ -3962,21 +3950,38 @@ export class DiscordBot {
       this.lastChannelId = channel.id;
     }
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      
-      // Don't add buttons to message chunks anymore
-      const messageOptions = { content: chunk, allowedMentions: { parse: ['users'] } };
-      
-      const message = await channel.send(messageOptions);
-      sentMessages.push(message);
-      if (saveMessages) {
-        this.lastDistributionMessages.push(message);
+    // Check if input is array (from getFormattedDistribution) or string
+    if (Array.isArray(textOrArray)) {
+      // Send each message in the array
+      for (let i = 0; i < textOrArray.length; i++) {
+        const safeText = this.sanitizeMessageContent(textOrArray[i]);
+        const messageOptions = { content: safeText, allowedMentions: { parse: ['users'] } };
+        
+        const message = await channel.send(messageOptions);
+        sentMessages.push(message);
+        if (saveMessages) {
+          this.lastDistributionMessages.push(message);
+        }
+      }
+    } else {
+      // Legacy: handle string input
+      const maxLength = 2000;
+      const safeText = this.sanitizeMessageContent(textOrArray);
+      const chunks = saveMessages
+        ? this.splitDistributionToChunks(safeText, maxLength)
+        : this.splitTextByLinesToChunks(safeText, maxLength);
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const messageOptions = { content: chunk, allowedMentions: { parse: ['users'] } };
+        
+        const message = await channel.send(messageOptions);
+        sentMessages.push(message);
+        if (saveMessages) {
+          this.lastDistributionMessages.push(message);
+        }
       }
     }
-
-    // Note: Buttons are now sent as ephemeral followUp in handleDistribute
-    // No need to send them here anymore
 
     // Save message IDs to file
     if (saveMessages) {

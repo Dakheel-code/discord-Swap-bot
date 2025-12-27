@@ -490,7 +490,7 @@ export class DistributionManager {
 
   /**
    * Get formatted distribution for display
-   * @returns {string} Formatted text
+   * @returns {Array<string>} Array of formatted text messages (one per clan + wildcards + footer)
    */
   getFormattedDistribution() {
     // Header with season number
@@ -500,19 +500,25 @@ export class DistributionManager {
       if (value === null || value === undefined) return '';
       return String(value).replace(/[\\`*_~|]/g, '\\$&');
     };
-    let output = `**# <:RGR:1238937013940523008> SWAP LIST SEASON ${seasonNum} <:RGR:1238937013940523008>**\n\n`;
+    
+    const messages = [];
+    
+    // Header message
+    messages.push(`<:RGR:1238937013940523008> **SWAP LIST SEASON ${seasonNum}** <:RGR:1238937013940523008>`);
 
-    // Display main groups with "to" prefix and player count
+    // Display main groups with "to" prefix and player count - each clan in separate message
     for (const groupName of config.groups.names) {
       const players = this.groups[groupName];
       const playerCount = players.length; // Count only players in the actual group (automatic distribution)
       
+      let clanOutput = '';
+      
       // Show player count only if > 0
       const countText = playerCount > 0 ? ` (${playerCount})` : '';
-      output += `**## to ${groupName}${countText}**\n`;
+      clanOutput += `**to ${groupName}${countText}:**\n`;
       
       if (players.length === 0) {
-        output += '_No players_\n\n';
+        clanOutput += '_No players_\n';
       } else {
         players.forEach((player, index) => {
           // Get Discord mention and original name
@@ -552,45 +558,34 @@ export class DistributionManager {
                     player['Score'] || player['score'] || '';
           }
           
-          // Format: › @mention • Name • **value**
-          let line = '› ';
+          // Format with numbering: - <@mention> trophies
+          let line = `- `;
+          
           if (discordMention) {
             line += discordMention;
-            if (originalName) {
-              line += ` • ${originalName}`;
-            }
           } else {
             const displayName = originalName || escapeMd(this.getPlayerName(player));
             line += displayName;
           }
           
           if (value) {
-            line += ` • **${value}**`;
+            line += ` ${value}`;
           }
           if (isDone) {
             line += ' ✅';
           }
-          output += line + '\n';
+          clanOutput += line + '\n';
         });
-        output += '\n';
       }
+      
+      messages.push(clanOutput);
     }
 
-    // Display WILDCARDS group (excluded + manually moved)
+    // Display WILDCARDS group (excluded + manually moved) - separate message
     if (this.groups.WILDCARDS && this.groups.WILDCARDS.length > 0) {
-      // Count moves per clan
-      const clanCounts = { RGR: 0, OTL: 0, RND: 0 };
-      this.groups.WILDCARDS.forEach(player => {
-        const identifier = this.getPlayerIdentifier(player);
-        const info = this.wildcardInfo.get(identifier);
-        if (info && info.type === 'manual') {
-          if (clanCounts[info.target] !== undefined) {
-            clanCounts[info.target]++;
-          }
-        }
-      });
-
-      output += `**# WILDCARDS (${this.groups.WILDCARDS.length})**\n`;
+      let wildcardsOutput = '';
+      
+      wildcardsOutput += `**WILDCARDS (${this.groups.WILDCARDS.length}):**\n`;
       this.groups.WILDCARDS.forEach((player, index) => {
         // Get Discord mention and original name
         const discordMention = player.DiscordName || '';
@@ -619,42 +614,43 @@ export class DistributionManager {
         
         const info = this.wildcardInfo.get(identifier);
         
-        // Build line: @mention •Name• moves ➜ CLAN or ⏸ Stay in CLAN
-        let line = '';
+        // Build line: - @mention stays/moves
+        let line = '- ';
         if (discordMention) {
           line += discordMention;
-          if (originalName) {
-            line += ` •${originalName}•`;
-          }
         } else {
           const displayName = originalName || escapeMd(this.getPlayerName(player));
-          line += `•${displayName}•`;
+          line += displayName;
         }
         
         if (info) {
           if (info.type === 'excluded' || info.type === 'stay') {
-            line += ` stays in **${info.target}**`;
+            line += ` stays in ${info.target}`;
           } else if (info.type === 'manual') {
-            line += ` moves to **${info.target}**`;
+            line += ` moves to ${info.target}`;
           }
         }
         
         if (isDone) {
           line += ' ✅';
         }
-        output += line + '\n';
+        wildcardsOutput += line + '\n';
       });
-      output += '\n';
+      
+      messages.push(wildcardsOutput);
     }
 
-    // Footer message
-    output += '---\n\n';
-    output += 'Done: ✅\n\n';
-    output += '**IF SOMEONE IN __RGR OR OTL__ CAN\'T PLAY AT RESET, PLEASE CONTACT LEADERSHIP!**\n\n';
-    output += ':exclamation: **| 18-HOUR-RULE |** :exclamation:\n';
-    output += '__Anyone on the swap list who hasn\'t moved within 18 hours after reset will be automatically kicked from their current clan, replaced and must apply on their own to RND.__\n';
+    // Footer message - separate message
+    let footer = '';
+    footer += 'Stop: ❌  Hold: ✋  Done: ✅\n\n';
+    footer += '**IF SOMEONE IN __RGR OR OTL__ CAN\'T PLAY AT RESET, PLEASE CONTACT LEADERSHIP!**\n\n';
+    footer += 'AND DON\'T FORGET TO HIT MANTICORE BEFORE YOU MOVE!\n\n';
+    footer += '❗**18-HOUR-RULE**❗\n';
+    footer += '__Anyone on the swap list who hasn\'t moved within 18 hours after reset will be automatically kicked from their current clan, replaced and must apply on their own to RND.__';
+    
+    messages.push(footer);
 
-    return output;
+    return messages;
   }
 
   /**
