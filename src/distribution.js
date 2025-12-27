@@ -665,6 +665,40 @@ export class DistributionManager {
    */
   getSwapsLeft(hideCompleted = true, specificPlayers = null) {
     let output = '**SWAPS LEFT**\n\n';
+
+    const getSwapsDisplayName = (player) => {
+      if (!player) return 'Unknown';
+
+      const preferredColumns = [
+        'OriginalName',
+        'Name',
+        'name',
+        'Player',
+        'player',
+        'USERNAME',
+        'username'
+      ];
+
+      for (const col of preferredColumns) {
+        if (player[col]) {
+          const v = String(player[col]).trim();
+          if (v) return v;
+        }
+      }
+
+      if (player.DisplayName) {
+        const v = String(player.DisplayName).trim();
+        if (v) return v;
+      }
+
+      if (player.DiscordName) {
+        const v = String(player.DiscordName).trim();
+        if (v) return v;
+      }
+
+      const firstValue = Object.values(player).find(v => v && String(v).trim());
+      return firstValue ? String(firstValue).trim() : 'Unknown';
+    };
     
     // If specificPlayers is provided, use that list for updates
     if (specificPlayers && specificPlayers.length > 0) {
@@ -673,7 +707,7 @@ export class DistributionManager {
       
       // Update isDone status for each player
       specificPlayers.forEach(player => {
-        const identifier = player.name;
+        const identifier = player.identifier || player.name;
         let isDone = this.completedPlayers.has(identifier);
         
         // Check by mention
@@ -696,6 +730,20 @@ export class DistributionManager {
         
         player.isDone = isDone;
         if (isDone) doneCount++;
+
+        if (!player.name || player.name === 'Unknown') {
+          let resolved = null;
+          if (player.mention) {
+            resolved = this.findPlayer(player.mention);
+          }
+          if (!resolved && player.discordId) {
+            resolved = this.findPlayer(`<@${player.discordId}>`);
+          }
+          if (resolved) {
+            player.name = getSwapsDisplayName(resolved);
+            player.identifier = this.getPlayerIdentifier(resolved);
+          }
+        }
       });
       
       const remainingCount = totalCount - doneCount;
@@ -728,8 +776,7 @@ export class DistributionManager {
       }
       
       this.groups[groupName].forEach(player => {
-        // Use original name for display, not Discord mention
-        const displayName = this.getPlayerName(player);
+        const displayName = getSwapsDisplayName(player);
         const mention = player.DiscordName; // Keep mention for reference
         const discordId = player['Discord-ID'] || null;
         const identifier = this.getPlayerIdentifier(player);
@@ -761,6 +808,7 @@ export class DistributionManager {
             name: displayName,
             mention: mention,
             discordId: discordId,
+            identifier: identifier,
             targetClan: groupName,
             isDone: isDone
           });
@@ -771,8 +819,7 @@ export class DistributionManager {
     // Check WILDCARDS (manual moves)
     if (this.groups.WILDCARDS && this.groups.WILDCARDS.length > 0) {
       this.groups.WILDCARDS.forEach(player => {
-        // Use original name for display, not Discord mention
-        const displayName = this.getPlayerName(player);
+        const displayName = getSwapsDisplayName(player);
         const mention = player.DiscordName; // Keep mention for reference
         const discordId = player['Discord-ID'] || null;
         const identifier = this.getPlayerIdentifier(player);
@@ -815,6 +862,7 @@ export class DistributionManager {
             name: displayName,
             mention: mention,
             discordId: discordId,
+            identifier: identifier,
             targetClan: targetClan,
             isDone: isDone
           });
