@@ -2124,11 +2124,19 @@ export class DiscordBot {
     const buildSelectMenuRows = (baseCustomId, placeholder, players) => {
       const rows = [];
 
+      const makeUniqueOptionValue = (identifier, suffix) => {
+        const base = String(identifier ?? 'unknown');
+        const value = `${base}|${suffix}`;
+        if (value.length <= 100) return value;
+        const maxBaseLen = Math.max(1, 100 - String(suffix).length - 1);
+        return `${base.slice(0, maxBaseLen)}|${suffix}`;
+      };
+
       for (let pageIndex = 0; pageIndex < players.length; pageIndex += 25) {
         const page = players.slice(pageIndex, pageIndex + 25);
-        const options = page.map(player => ({
+        const options = page.map((player, idx) => ({
           label: player.name,
-          value: player.identifier
+          value: makeUniqueOptionValue(player.identifier, pageIndex + idx)
         }));
 
         const pageNumber = Math.floor(pageIndex / 25) + 1;
@@ -2214,7 +2222,7 @@ export class DiscordBot {
    * Handle player selection from select menu
    */
   async handleSelectPlayersDone(interaction) {
-    const selectedIdentifiers = interaction.values;
+    const selectedIdentifiers = (interaction.values || []).map(v => String(v).split('|')[0]);
     const userId = interaction.user.id;
     
     console.log(`🔍 Selected identifiers: ${selectedIdentifiers.join(', ')}`);
