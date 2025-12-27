@@ -746,6 +746,10 @@ export class DiscordBot {
           await this.handleDoneTemp(interaction);
           break;
 
+        case 'restore_fixed':
+          await this.handleRestoreFixed(interaction);
+          break;
+
         default:
           await interaction.editReply('❌ Unknown command');
       }
@@ -3389,6 +3393,130 @@ export class DiscordBot {
     } catch (error) {
       console.error('❌ Error in handleDoneTemp:', error);
       await interaction.editReply('❌ Failed to load messages');
+    }
+  }
+
+  async handleRestoreFixed(interaction) {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ ephemeral: true });
+    }
+
+    const FIXED_CHANNEL_ID = '1037060250701922405';
+    const FIXED_MESSAGE_IDS = [
+      '1454308028223590422',
+      '1454308033432912033',
+      '1454308036075065396'
+    ];
+
+    const extractCompletedFromText = (text) => {
+      const completed = new Set();
+      if (!text) return completed;
+
+      const lines = String(text).split('\n');
+      for (const line of lines) {
+        if (!line.includes('✅')) continue;
+
+        const mentionMatch = line.match(/<@!?(\d+)>/);
+        if (mentionMatch) {
+          completed.add(mentionMatch[0]);
+        }
+
+        // Main list format: "› @mention • Name • **123** ✅" or "› Name • **123** ✅"
+        // Wildcards format may contain "•Name•".
+        const trimmed = line.trim();
+
+        // If contains bullet separators, try to extract the first name segment
+        if (trimmed.startsWith('›')) {
+          let after = trimmed.replace(/^›\s*/, '');
+          if (after.includes('•')) {
+            // if mention exists, name will be after first '•'
+            const parts = after.split('•').map(p => p.trim()).filter(Boolean);
+            // parts may be [mention, name, **value** ✅] or [name, **value** ✅]
+            for (const p of parts) {
+              if (!p) continue;
+              if (p.startsWith('<@')) continue;
+              if (p.startsWith('**')) continue;
+              if (p.includes('**')) continue;
+              const name = p.replace(/✅/g, '').trim();
+              if (name && name.toLowerCase() !== 'unknown') {
+                completed.add(name);
+                break;
+              }
+            }
+          } else {
+            // no '•' => whole remainder is name
+            const name = after.replace(/✅/g, '').trim();
+            if (name && name.toLowerCase() !== 'unknown') {
+              completed.add(name);
+            }
+          }
+        } else if (trimmed.includes('•')) {
+          // Wildcards: "@mention •Name• moves... ✅" or "•Name• stays... ✅"
+          const between = trimmed.split('•').map(p => p.trim()).filter(Boolean);
+          for (const p of between) {
+            if (!p) continue;
+            if (p.startsWith('<@')) continue;
+            if (p.startsWith('moves') || p.startsWith('stays')) continue;
+            if (p.includes('moves') || p.includes('stays')) continue;
+            const name = p.replace(/✅/g, '').trim();
+            if (name && name.toLowerCase() !== 'unknown') {
+              completed.add(name);
+              break;
+            }
+          }
+        }
+      }
+
+      return completed;
+    };
+
+    try {
+      const channel = await this.client.channels.fetch(FIXED_CHANNEL_ID);
+      if (!channel) {
+        await interaction.editReply('❌ Could not fetch fixed channel');
+        return;
+      }
+
+      this.lastDistributionMessages = [];
+      this.lastChannelId = FIXED_CHANNEL_ID;
+
+      let restoredCompleted = new Set();
+      for (const messageId of FIXED_MESSAGE_IDS) {
+        try {
+          const msg = await channel.messages.fetch(messageId);
+          this.lastDistributionMessages.push(msg);
+          const fromMsg = extractCompletedFromText(msg.content);
+          for (const v of fromMsg) restoredCompleted.add(v);
+        } catch (e) {
+          console.warn(`⚠️ restore_fixed: could not fetch message ${messageId}`);
+        }
+      }
+
+      if (this.lastDistributionMessages.length !== 3) {
+        await interaction.editReply(`❌ Could not load all 3 messages (${this.lastDistributionMessages.length}/3)`);
+        return;
+      }
+
+      // Ensure distribution is loaded from Sheets
+      const ok = await this.ensureDistributionLoaded();
+      if (!ok) {
+        await interaction.editReply('⚠️ No swap found. Please run `/swap` first.');
+        return;
+      }
+
+      // Merge restored checkmarks with current set
+      const merged = new Set([...(this.distributionManager.completedPlayers || new Set()), ...restoredCompleted]);
+      this.distributionManager.completedPlayers = merged;
+
+      // Update the same 3 messages
+      const formattedText = this.distributionManager.getFormattedDistribution();
+      await this.updateDistributionMessages(formattedText);
+
+      this.saveMessageIds();
+      await interaction.editReply(`✅ Restored messages and preserved ${restoredCompleted.size} ✅ mark(s)`);
+    } catch (error) {
+      console.error('❌ Error in restore_fixed:', error);
+      await interaction.editReply('❌ Failed to restore messages');
     }
   }
 
