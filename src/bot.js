@@ -262,9 +262,12 @@ export class DiscordBot {
       const lastCopiedRow = state && state.masterSync && Number(state.masterSync.lastCopiedRow) ? Number(state.masterSync.lastCopiedRow) : undefined;
       const targetFrozen = !!(state && state.masterSync && state.masterSync.targetFrozen);
 
+      const fullSync = !!force;
+
       const result = await syncMasterCsvToFinal({
         lastCopiedRow,
         freezeExistingTarget: !targetFrozen,
+        fullSync,
       });
 
       if (result && (result.copiedRows > 0 || result.frozeExistingTarget)) {
@@ -3095,7 +3098,11 @@ export class DiscordBot {
       this.saveSchedule();
 
       console.log('🔁 Master Sync: Copying Master_CSV -> Master_Final (on schedule creation)...');
-      await this.checkAndExecuteMasterSync(true);
+      const syncResult = await this.checkAndExecuteMasterSync(true);
+
+      if (syncResult && syncResult.aborted) {
+        console.warn(`⚠️ Schedule creation sync skipped: ${syncResult.abortReason || 'Source empty'}`);
+      }
 
       console.log('🔄 Refreshing data from Google Sheets (Master_Final) after schedule creation...');
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
@@ -3699,6 +3706,17 @@ export class DiscordBot {
           return;
         }
 
+        if (syncResult.aborted) {
+          const embed = new EmbedBuilder()
+            .setColor(0xff9900)
+            .setTitle('⚠️ Refresh Skipped')
+            .setDescription(`Master_CSV appears empty. Sync aborted to protect Master_Final.\n\n**Reason:** ${syncResult.abortReason || 'Source empty'}`)
+            .setTimestamp();
+
+          await interaction.editReply({ embeds: [embed] });
+          return;
+        }
+
         const copiedRows = typeof syncResult.copiedRows === 'number' ? syncResult.copiedRows : 0;
         const froze = !!syncResult.frozeExistingTarget;
 
@@ -3706,8 +3724,19 @@ export class DiscordBot {
           .setColor(0x00ff00)
           .setTitle('✅ Refreshed')
           .setDescription(
-            `Master sync completed.\nCopied **${copiedRows}** new row(s) to **${config.googleSheets.masterFinalSheetName || 'Master_Final'}**${froze ? '\n(Existing formulas were frozen to values)' : ''}.\n\nRun \/swap to create a distribution.`
+            `Master sync completed.\nCopied **${copiedRows}** row(s) to **${config.googleSheets.masterFinalSheetName || 'Master_Final'}**${froze ? '\n(Existing formulas were frozen to values)' : ''}.\n\nRun \/swap to create a distribution.`
           )
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      if (syncResult && syncResult.aborted) {
+        const embed = new EmbedBuilder()
+          .setColor(0xff9900)
+          .setTitle('⚠️ Refresh Skipped')
+          .setDescription(`Master_CSV appears empty. Sync aborted to protect Master_Final.\n\n**Reason:** ${syncResult.abortReason || 'Source empty'}`)
           .setTimestamp();
 
         await interaction.editReply({ embeds: [embed] });

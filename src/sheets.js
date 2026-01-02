@@ -90,13 +90,26 @@ export async function syncMasterCsvToFinal(options = {}) {
     return { copiedRows: 0, lastCopiedRow: options.lastCopiedRow || 1 };
   }
 
-  const sourceColRange = `${sourceSheetName}!A:A`;
-  const sourceColRes = await sheetsClient.spreadsheets.values.get({
+  const endCol = columnIndexToLetter(Math.max(0, columnCount - 1));
+  const sourceDataRange = `${sourceSheetName}!A1:${endCol}`;
+  const sourceDataRes = await sheetsClient.spreadsheets.values.get({
     spreadsheetId: config.googleSheets.sheetId,
-    range: sourceColRange,
+    range: sourceDataRange,
   });
-  const sourceRowsInA = sourceColRes.data.values ? sourceColRes.data.values.length : 0;
-  const lastSourceRow = Math.max(0, sourceRowsInA);
+  const sourceRows = sourceDataRes.data.values ? sourceDataRes.data.values.length : 0;
+  const lastSourceRow = Math.max(0, sourceRows);
+
+  const abortIfSourceEmpty = options.abortIfSourceEmpty !== false;
+  if (abortIfSourceEmpty && lastSourceRow <= 1) {
+    return {
+      copiedRows: 0,
+      lastCopiedRow: options.fullSync ? 0 : (options.lastCopiedRow || 0),
+      frozeExistingTarget: false,
+      aborted: true,
+      abortReason: 'Source sheet has no data rows',
+      sourceRows: lastSourceRow,
+    };
+  }
 
   const targetColRange = `${targetSheetName}!A:A`;
   const targetColRes = await sheetsClient.spreadsheets.values.get({
@@ -129,7 +142,9 @@ export async function syncMasterCsvToFinal(options = {}) {
   }
 
   const inferredLastCopiedRow = Math.max(0, targetRowsInA);
-  const lastCopiedRow = Math.max(0, Number(options.lastCopiedRow ?? inferredLastCopiedRow) || 0);
+  const lastCopiedRow = options.fullSync
+    ? 0
+    : Math.max(0, Number(options.lastCopiedRow ?? inferredLastCopiedRow) || 0);
 
   const startRow = lastCopiedRow + 1;
   if (startRow > lastSourceRow) {
