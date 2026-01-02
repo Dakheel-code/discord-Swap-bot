@@ -247,8 +247,8 @@ export class DiscordBot {
     console.log('🤖 Bot is ready to receive commands!');
   }
 
-  async checkAndExecuteMasterSync() {
-    if (!config.googleSheets.masterSyncEnabled) {
+  async checkAndExecuteMasterSync(force = false) {
+    if (!force && !config.googleSheets.masterSyncEnabled) {
       return;
     }
 
@@ -3094,15 +3094,13 @@ export class DiscordBot {
       };
       this.saveSchedule();
 
-      if (config.googleSheets.masterSyncEnabled) {
-        console.log('🔁 Master Sync: Copying Master_CSV -> Master_Final (on schedule creation)...');
-        await this.checkAndExecuteMasterSync();
+      console.log('🔁 Master Sync: Copying Master_CSV -> Master_Final (on schedule creation)...');
+      await this.checkAndExecuteMasterSync(true);
 
-        console.log('🔄 Refreshing data from Google Sheets (Master_Final) after schedule creation...');
-        const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
-        this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
-        this.dataSnapshot = this.createDataSnapshot(this.playersData);
-      }
+      console.log('🔄 Refreshing data from Google Sheets (Master_Final) after schedule creation...');
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+      this.dataSnapshot = this.createDataSnapshot(this.playersData);
 
       console.log(`⏰ Schedule set: Will post in ${minutesUntil} minutes (${datetime} UTC)`);
       console.log(`📅 Scheduled for: ${scheduledDate.toISOString()}`);
@@ -3681,24 +3679,34 @@ export class DiscordBot {
    */
   async handleRefresh(interaction) {
     try {
-      let syncResult = null;
-      if (config.googleSheets.masterSyncEnabled) {
-        console.log('🔁 Master Sync: Copying Master_CSV -> Master_Final (manual refresh)...');
-        syncResult = await this.checkAndExecuteMasterSync();
+      console.log('🔁 Master Sync: Copying Master_CSV -> Master_Final (manual refresh)...');
+      const syncResult = await this.checkAndExecuteMasterSync(true);
+
+      if (!syncResult && !config.googleSheets.masterSyncEnabled) {
+        console.warn('⚠️ Master Sync is disabled (MASTER_SYNC_ENABLED is not true).');
       }
 
       // Check if there are distribution messages to refresh
       if (!this.lastDistributionMessages || this.lastDistributionMessages.length === 0) {
-        const copiedRows = syncResult && typeof syncResult.copiedRows === 'number' ? syncResult.copiedRows : 0;
-        const froze = !!(syncResult && syncResult.frozeExistingTarget);
+        if (!syncResult) {
+          const embed = new EmbedBuilder()
+            .setColor(0xff0000)
+            .setTitle('❌ Refresh Failed')
+            .setDescription('Master sync did not run. Please check bot logs for details (Service Account write access is required).')
+            .setTimestamp();
+
+          await interaction.editReply({ embeds: [embed] });
+          return;
+        }
+
+        const copiedRows = typeof syncResult.copiedRows === 'number' ? syncResult.copiedRows : 0;
+        const froze = !!syncResult.frozeExistingTarget;
 
         const embed = new EmbedBuilder()
           .setColor(0x00ff00)
           .setTitle('✅ Refreshed')
           .setDescription(
-            config.googleSheets.masterSyncEnabled
-              ? `Master sync completed.\nCopied **${copiedRows}** new row(s) to **${config.googleSheets.masterFinalSheetName || 'Master_Final'}**${froze ? '\n(Existing formulas were frozen to values)' : ''}.\n\nRun \/swap to create a distribution.`
-              : 'Data refreshed. Run /swap to create a distribution.'
+            `Master sync completed.\nCopied **${copiedRows}** new row(s) to **${config.googleSheets.masterFinalSheetName || 'Master_Final'}**${froze ? '\n(Existing formulas were frozen to values)' : ''}.\n\nRun \/swap to create a distribution.`
           )
           .setTimestamp();
 
