@@ -5,6 +5,211 @@ import fs from 'fs';
 let sheetsClient = null;
 let sheetsClientWithAuth = null; // For write operations
 
+function safeJsonParse(raw, contextLabel = 'JSON') {
+  const text = String(raw ?? '')
+    .replace(/^\uFEFF/, '')
+    .trim();
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const prefix = text.slice(0, 40);
+    throw new Error(`Failed to parse ${contextLabel}: ${error.message}. Starts with: ${JSON.stringify(prefix)}`);
+  }
+}
+
+function columnIndexToLetter(index) {
+  let result = '';
+  let n = index + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    result = String.fromCharCode(65 + rem) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+}
+
+async function getSheetPropertiesByTitle(sheetTitle) {
+  const client = sheetsClientWithAuth || sheetsClient;
+  if (!client) {
+    throw new Error('Sheets client not initialized');
+  }
+
+  const meta = await client.spreadsheets.get({
+    spreadsheetId: config.googleSheets.sheetId,
+  });
+
+  const sheets = meta.data.sheets || [];
+  const sheet = sheets.find(s => s.properties && s.properties.title === sheetTitle);
+  if (!sheet || !sheet.properties) {
+    throw new Error(`Sheet not found: ${sheetTitle}`);
+  }
+
+  return sheet.properties;
+}
+
+export async function updateBotState(partialState) {
+  const current = (await loadBotState()) || {};
+
+  const mergedMasterSync = {
+    ...(current.masterSync || {}),
+    ...((partialState && partialState.masterSync) || {}),
+  };
+
+  const merged = {
+    ...current,
+    ...(partialState || {}),
+    masterSync: mergedMasterSync,
+  };
+
+  await saveBotState(merged);
+  return merged;
+}
+
+export async function syncMasterCsvToFinal(options = {}) {
+  if (!sheetsClient) {
+    throw new Error('Sheets client not initialized');
+  }
+  if (!sheetsClientWithAuth) {
+    throw new Error('Write access not available. Please configure Service Account credentials in .env file (GOOGLE_SERVICE_ACCOUNT_PATH)');
+  }
+
+  const sourceSheetName = options.sourceSheetName || config.googleSheets.masterCsvSheetName || 'Master_CSV';
+  const targetSheetName = options.targetSheetName || config.googleSheets.masterFinalSheetName || 'Master_Final';
+
+  const sourceProps = await getSheetPropertiesByTitle(sourceSheetName);
+  const targetProps = await getSheetPropertiesByTitle(targetSheetName);
+
+  const headerRes = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: config.googleSheets.sheetId,
+    range: `${sourceSheetName}!1:1`,
+  });
+  const headerRow = (headerRes.data.values && headerRes.data.values[0]) ? headerRes.data.values[0] : [];
+  const columnCount = headerRow.length;
+
+  if (!columnCount) {
+    return { copiedRows: 0, lastCopiedRow: options.lastCopiedRow || 1 };
+  }
+
+  const sourceColRange = `${sourceSheetName}!A:A`;
+  const sourceColRes = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: config.googleSheets.sheetId,
+    range: sourceColRange,
+  });
+  const sourceRowsInA = sourceColRes.data.values ? sourceColRes.data.values.length : 0;
+  const lastSourceRow = Math.max(0, sourceRowsInA);
+
+  const targetColRange = `${targetSheetName}!A:A`;
+  const targetColRes = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: config.googleSheets.sheetId,
+    range: targetColRange,
+  });
+  const targetRowsInA = targetColRes.data.values ? targetColRes.data.values.length : 0;
+
+  let frozeExistingTarget = false;
+  if (options.freezeExistingTarget && targetRowsInA > 0) {
+    const endCol = columnIndexToLetter(Math.max(0, columnCount - 1));
+    const freezeRange = `${targetSheetName}!A1:${endCol}${targetRowsInA}`;
+
+    const freezeRes = await sheetsClient.spreadsheets.values.get({
+      spreadsheetId: config.googleSheets.sheetId,
+      range: freezeRange,
+      valueRenderOption: 'FORMATTED_VALUE',
+    });
+
+    const values = freezeRes.data.values || [];
+    if (values.length > 0) {
+      await sheetsClientWithAuth.spreadsheets.values.update({
+        spreadsheetId: config.googleSheets.sheetId,
+        range: freezeRange,
+        valueInputOption: 'RAW',
+        resource: { values },
+      });
+      frozeExistingTarget = true;
+    }
+  }
+
+  const inferredLastCopiedRow = Math.max(0, targetRowsInA);
+  const lastCopiedRow = Math.max(0, Number(options.lastCopiedRow ?? inferredLastCopiedRow) || 0);
+
+  const startRow = lastCopiedRow + 1;
+  if (startRow > lastSourceRow) {
+    return { copiedRows: 0, lastCopiedRow, frozeExistingTarget };
+  }
+
+  const neededRowCount = lastSourceRow;
+  const neededColCount = columnCount;
+
+  const targetRowCount = targetProps.gridProperties && targetProps.gridProperties.rowCount ? targetProps.gridProperties.rowCount : 0;
+  const targetColCount = targetProps.gridProperties && targetProps.gridProperties.columnCount ? targetProps.gridProperties.columnCount : 0;
+
+  const requests = [];
+
+  if (targetRowCount < neededRowCount || targetColCount < neededColCount) {
+    requests.push({
+      updateSheetProperties: {
+        properties: {
+          sheetId: targetProps.sheetId,
+          gridProperties: {
+            rowCount: Math.max(targetRowCount, neededRowCount),
+            columnCount: Math.max(targetColCount, neededColCount),
+          },
+        },
+        fields: 'gridProperties(rowCount,columnCount)',
+      },
+    });
+  }
+
+  requests.push({
+    copyPaste: {
+      source: {
+        sheetId: sourceProps.sheetId,
+        startRowIndex: startRow - 1,
+        endRowIndex: lastSourceRow,
+        startColumnIndex: 0,
+        endColumnIndex: columnCount,
+      },
+      destination: {
+        sheetId: targetProps.sheetId,
+        startRowIndex: startRow - 1,
+        endRowIndex: lastSourceRow,
+        startColumnIndex: 0,
+        endColumnIndex: columnCount,
+      },
+      pasteType: 'PASTE_FORMAT',
+      pasteOrientation: 'NORMAL',
+    },
+  });
+
+  requests.push({
+    copyPaste: {
+      source: {
+        sheetId: sourceProps.sheetId,
+        startRowIndex: startRow - 1,
+        endRowIndex: lastSourceRow,
+        startColumnIndex: 0,
+        endColumnIndex: columnCount,
+      },
+      destination: {
+        sheetId: targetProps.sheetId,
+        startRowIndex: startRow - 1,
+        endRowIndex: lastSourceRow,
+        startColumnIndex: 0,
+        endColumnIndex: columnCount,
+      },
+      pasteType: 'PASTE_VALUES',
+      pasteOrientation: 'NORMAL',
+    },
+  });
+
+  await sheetsClientWithAuth.spreadsheets.batchUpdate({
+    spreadsheetId: config.googleSheets.sheetId,
+    resource: { requests },
+  });
+
+  const copiedRows = lastSourceRow - startRow + 1;
+  return { copiedRows, lastCopiedRow: lastSourceRow, frozeExistingTarget };
+}
+
 /**
  * Initialize Google Sheets API client using API Key
  * Supports both environment variable (Railway) and file path (local)
@@ -23,7 +228,7 @@ export async function initializeSheetsClient() {
     // Method 1: Try to read from environment variable (for Railway/Heroku)
     if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
       try {
-        credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+        credentials = safeJsonParse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON, 'GOOGLE_SERVICE_ACCOUNT_JSON');
         console.log('✅ Service Account loaded from environment variable');
       } catch (parseError) {
         console.error('❌ Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON:', parseError.message);
@@ -33,7 +238,8 @@ export async function initializeSheetsClient() {
     // Method 2: Try to read from file (for local development)
     if (!credentials && config.googleSheets.serviceAccountPath && fs.existsSync(config.googleSheets.serviceAccountPath)) {
       try {
-        credentials = JSON.parse(fs.readFileSync(config.googleSheets.serviceAccountPath, 'utf8'));
+        const raw = fs.readFileSync(config.googleSheets.serviceAccountPath, 'utf8');
+        credentials = safeJsonParse(raw, `service account file (${config.googleSheets.serviceAccountPath})`);
         console.log('✅ Service Account loaded from file');
       } catch (fileError) {
         console.error('❌ Failed to read service account file:', fileError.message);
@@ -71,7 +277,7 @@ export async function initializeSheetsClient() {
  * Fetch data from Google Sheets
  * @returns {Promise<Array<Object>>} Array of player objects
  */
-export async function fetchPlayersData() {
+export async function fetchPlayersData(options = {}) {
   if (!sheetsClient) {
     throw new Error('Sheets client not initialized');
   }
@@ -79,7 +285,7 @@ export async function fetchPlayersData() {
   try {
     const response = await sheetsClient.spreadsheets.values.get({
       spreadsheetId: config.googleSheets.sheetId,
-      range: config.googleSheets.range,
+      range: options.range || config.googleSheets.range,
     });
 
     const rows = response.data.values;
@@ -178,14 +384,14 @@ export async function fetchDiscordMapping() {
  * Fetch data from Google Sheets with Discord names
  * @returns {Promise<Array<Object>>} Array of player objects with Discord names
  */
-export async function fetchPlayersDataWithDiscordNames() {
+export async function fetchPlayersDataWithDiscordNames(options = {}) {
   if (!sheetsClient) {
     throw new Error('Sheets client not initialized');
   }
 
   try {
     // Fetch players data
-    const players = await fetchPlayersData();
+    const players = await fetchPlayersData(options);
     
     // Fetch Discord mapping
     const discordMapping = await fetchDiscordMapping();

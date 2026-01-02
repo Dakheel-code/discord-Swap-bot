@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType } from 'discord.js';
 import { config } from './config.js';
 import { commands } from './commands.js';
-import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions, saveBotState, loadBotState } from './sheets.js';
+import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions, saveBotState, loadBotState, updateBotState, syncMasterCsvToFinal } from './sheets.js';
 import { DistributionManager } from './distribution.js';
 import fs from 'fs';
 
@@ -32,6 +32,7 @@ export class DiscordBot {
     this.dataSnapshot = null; // Store snapshot of sheet data for auto-send comparison
     this.autoSendMode = false; // Track if auto-send mode is active
     this.savedState = null; // Last loaded persistent state (from local file or BotState sheet)
+    this.masterSyncInProgress = false;
   }
 
   extractDiscordUserIdForDm(player) {
@@ -188,7 +189,8 @@ export class DiscordBot {
 
     try {
       console.log('🔄 ensureDistributionLoaded: Restoring distribution from Google Sheets...');
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = data.sortColumn || this.distributionManager.sortColumn || 'Trophies';
       const seasonNumber = data.seasonNumber || this.distributionManager.customSeasonNumber || null;
       this.distributionManager.distribute(this.playersData, sortColumn, seasonNumber);
@@ -245,6 +247,52 @@ export class DiscordBot {
     console.log('🤖 Bot is ready to receive commands!');
   }
 
+  async checkAndExecuteMasterSync() {
+    if (!config.googleSheets.masterSyncEnabled) {
+      return;
+    }
+
+    if (this.masterSyncInProgress) {
+      return;
+    }
+
+    this.masterSyncInProgress = true;
+    try {
+      const state = (await loadBotState()) || this.savedState || {};
+      const lastCopiedRow = state && state.masterSync && Number(state.masterSync.lastCopiedRow) ? Number(state.masterSync.lastCopiedRow) : undefined;
+      const targetFrozen = !!(state && state.masterSync && state.masterSync.targetFrozen);
+
+      const result = await syncMasterCsvToFinal({
+        lastCopiedRow,
+        freezeExistingTarget: !targetFrozen,
+      });
+
+      if (result && (result.copiedRows > 0 || result.frozeExistingTarget)) {
+        await updateBotState({
+          masterSync: {
+            lastCopiedRow: result.lastCopiedRow,
+            lastSyncAt: Date.now(),
+            targetFrozen: targetFrozen || !!result.frozeExistingTarget,
+          },
+        });
+
+        if (result.frozeExistingTarget) {
+          console.log('✅ Master Sync: Frozen existing Master_Final values (removed formulas)');
+        }
+        if (result.copiedRows > 0) {
+          console.log(`✅ Master Sync: Copied ${result.copiedRows} row(s) to Master_Final (lastCopiedRow=${result.lastCopiedRow})`);
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.warn(`⚠️ Master Sync failed: ${error.message}`);
+      return null;
+    } finally {
+      this.masterSyncInProgress = false;
+    }
+  }
+
   /**
    * Save message IDs to file
    */
@@ -262,7 +310,7 @@ export class DiscordBot {
       fs.writeFileSync(this.messagesFilePath, JSON.stringify(data, null, 2));
       console.log('💾 Saved distribution data: messages, sortColumn, seasonNumber, and completedPlayers');
 
-      saveBotState(data)
+      updateBotState(data)
         .then(() => console.log('💾 Saved BotState to Google Sheets'))
         .catch((error) => console.warn('⚠️ Failed to save BotState to Google Sheets:', error.message));
     } catch (error) {
@@ -278,6 +326,15 @@ export class DiscordBot {
       let data = null;
       if (fs.existsSync(this.messagesFilePath)) {
         data = JSON.parse(fs.readFileSync(this.messagesFilePath, 'utf8'));
+
+        try {
+          const sheetState = await loadBotState();
+          if (sheetState && sheetState.masterSync) {
+            data.masterSync = sheetState.masterSync;
+          }
+        } catch (error) {
+          console.warn('⚠️ Could not load BotState for master sync merge:', error.message);
+        }
       } else {
         console.log('ℹ️ No saved message IDs found locally, trying Google Sheets BotState...');
         data = await loadBotState();
@@ -337,7 +394,8 @@ export class DiscordBot {
 
       if (shouldRestoreState) {
         console.log('🔄 Reloading distribution data from Google Sheets...');
-        this.playersData = await fetchPlayersDataWithDiscordNames();
+        const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+        this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
         const sortColumn = data.sortColumn || 'Trophies';
         const seasonNumber = data.seasonNumber || null;
@@ -512,7 +570,8 @@ export class DiscordBot {
   async checkForDataChanges() {
     try {
       // Fetch current data
-      const currentData = await fetchPlayersDataWithDiscordNames();
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      const currentData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       
       // If no snapshot exists, create one and return false (no changes yet)
       if (!this.dataSnapshot) {
@@ -568,8 +627,9 @@ export class DiscordBot {
         return;
       }
 
-      console.log('🔄 Refreshing data from Google Sheets before scheduled post...');
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      console.log('🔄 Refreshing data from Google Sheets (Master_Final) before scheduled post...');
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       this.distributionManager.distribute(this.playersData, sortColumn);
@@ -658,11 +718,32 @@ export class DiscordBot {
 
       if (config.discord.guildId) {
         // Register for specific guild (faster for testing)
-        await rest.put(
-          Routes.applicationGuildCommands(this.client.user.id, config.discord.guildId),
-          { body: commandsData }
-        );
-        console.log('✅ Registered guild commands');
+        try {
+          await rest.put(
+            Routes.applicationGuildCommands(this.client.user.id, config.discord.guildId),
+            { body: commandsData }
+          );
+          console.log('✅ Registered guild commands');
+        } catch (error) {
+          const code = error && (error.code || error.rawError?.code);
+          const status = error && (error.status || error.rawError?.status);
+          const message = error && (error.message || error.rawError?.message);
+
+          // DiscordAPIError[50001]: Missing Access
+          if (code === 50001 || status === 403) {
+            console.warn('⚠️ Failed to register guild commands: Missing Access');
+            console.warn('   Fix: Ensure the bot is in the server for GUILD_ID and invited with OAuth2 scopes: bot + applications.commands');
+            console.warn('   Falling back to global command registration...');
+
+            await rest.put(
+              Routes.applicationCommands(this.client.user.id),
+              { body: commandsData }
+            );
+            console.log('✅ Registered global commands (fallback)');
+          } else {
+            console.error('❌ Failed to register guild commands:', message || error);
+          }
+        }
       } else {
         // Wait a bit for guilds to be fully cached
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1086,7 +1167,8 @@ export class DiscordBot {
     
     // Get all players
     if (!this.playersData || this.playersData.length === 0) {
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
     }
     
     if (this.playersData.length === 0) {
@@ -1286,7 +1368,8 @@ export class DiscordBot {
       
       // Refresh and redistribute once after all changes
       console.log(`🔄 Refreshing player data...`);
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       this.distributionManager.distribute(this.playersData);
       console.log(`✅ Data refreshed and redistributed`);
       
@@ -1359,7 +1442,8 @@ export class DiscordBot {
       }
       
       // Refresh and redistribute once after all changes
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       this.distributionManager.distribute(this.playersData);
       
       // Update messages if they exist
@@ -1450,9 +1534,17 @@ export class DiscordBot {
         fs.unlinkSync(messagesFilePath);
       }
 
-      saveBotState(null)
-        .then(() => console.log('🗑️ Cleared BotState in Google Sheets'))
-        .catch((error) => console.warn('⚠️ Failed to clear BotState in Google Sheets:', error.message));
+      updateBotState({
+        channelId: null,
+        distributionMessageIds: [],
+        swapsLeftMessageIds: [],
+        sortColumn: null,
+        seasonNumber: null,
+        completedPlayers: [],
+        timestamp: Date.now(),
+      })
+        .then(() => console.log('🗑️ Cleared distribution state in Google Sheets'))
+        .catch((error) => console.warn('⚠️ Failed to clear distribution state in Google Sheets:', error.message));
       
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
@@ -1490,9 +1582,17 @@ export class DiscordBot {
         fs.unlinkSync(messagesFilePath);
       }
 
-      saveBotState(null)
-        .then(() => console.log('🗑️ Cleared BotState in Google Sheets'))
-        .catch((error) => console.warn('⚠️ Failed to clear BotState in Google Sheets:', error.message));
+      updateBotState({
+        channelId: null,
+        distributionMessageIds: [],
+        swapsLeftMessageIds: [],
+        sortColumn: null,
+        seasonNumber: null,
+        completedPlayers: [],
+        timestamp: Date.now(),
+      })
+        .then(() => console.log('🗑️ Cleared distribution state in Google Sheets'))
+        .catch((error) => console.warn('⚠️ Failed to clear distribution state in Google Sheets:', error.message));
       
       // Clear all actions from Google Sheet
       await clearAllPlayerActions();
@@ -1811,7 +1911,8 @@ export class DiscordBot {
         
         // Auto-run swap if no data exists
         if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
-          this.playersData = await fetchPlayersDataWithDiscordNames();
+          const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+          this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
           if (this.playersData && this.playersData.length > 0) {
             this.distributionManager.distribute(this.playersData);
             console.log('📊 Auto-distributed players for schedule');
@@ -1849,8 +1950,14 @@ export class DiscordBot {
           const hoursUntil = Math.floor(diff / 1000 / 60 / 60);
           const minsUntil = Math.floor((diff / 1000 / 60) % 60);
           
+          if (config.googleSheets.masterSyncEnabled) {
+            console.log('🔁 Master Sync: Copying Master_CSV -> Master_Final (on schedule creation - auto-send)...');
+            await this.checkAndExecuteMasterSync();
+          }
+
           // Create initial snapshot NOW (at schedule creation time)
-          this.playersData = await fetchPlayersDataWithDiscordNames();
+          const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+          this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
           this.dataSnapshot = this.createDataSnapshot(this.playersData);
           console.log('📸 Created data snapshot at schedule creation time');
           
@@ -2037,18 +2144,7 @@ export class DiscordBot {
    * Handle "Refresh" button
    */
   async handleRefreshButton(interaction) {
-    // Refresh data from Google Sheets
-    this.playersData = await fetchPlayersDataWithDiscordNames();
-    
-    // Re-distribute
-    const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-    this.distributionManager.distribute(this.playersData, sortColumn);
-    
-    // Update messages
-    const formattedText = this.distributionManager.getFormattedDistribution();
-    await this.updateDistributionMessages(formattedText);
-    
-    await interaction.editReply('✅ Data refreshed and swap updated!');
+    await this.handleRefresh(interaction);
   }
 
   /**
@@ -2370,7 +2466,8 @@ export class DiscordBot {
     const seasonNumber = interaction.options.getString('season'); // Get season number from options
 
     // Fetch fresh data with Discord names
-    this.playersData = await fetchPlayersDataWithDiscordNames();
+    const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+    this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
     if (this.playersData.length === 0) {
       await interaction.editReply('❌ No data found in Google Sheet');
@@ -2407,7 +2504,7 @@ export class DiscordBot {
       timestamp: Date.now()
     };
 
-    saveBotState(stateToSave)
+    updateBotState(stateToSave)
       .then(() => console.log('💾 Saved BotState to Google Sheets (on /swap)'))
       .catch((error) => console.warn('⚠️ Failed to save BotState to Google Sheets (on /swap):', error.message));
 
@@ -2505,7 +2602,8 @@ export class DiscordBot {
       });
       
       // Refresh data first to get latest info
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       
       // Find player's current clan from playersData
       let playerCurrentClan = null;
@@ -2543,7 +2641,7 @@ export class DiscordBot {
       await writePlayerAction(discordId, actionToWrite);
       
       // Refresh distribution and update messages
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       this.distributionManager.distribute(this.playersData, sortColumn);
       
@@ -2600,7 +2698,8 @@ export class DiscordBot {
       await writePlayerAction(discordId, 'Hold');
       
       // Refresh distribution and update messages
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       this.distributionManager.distribute(this.playersData, sortColumn);
       
@@ -2664,7 +2763,8 @@ export class DiscordBot {
       }
 
       // Refresh distribution and update messages
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       this.distributionManager.distribute(this.playersData, sortColumn);
       
@@ -2741,18 +2841,6 @@ export class DiscordBot {
   /**
    * Handle /refresh command
    */
-  async handleRefresh(interaction) {
-    this.playersData = await fetchPlayersDataWithDiscordNames();
-
-    const embed = new EmbedBuilder()
-      .setColor(0x00ff00)
-      .setTitle('✅ Data Refreshed')
-      .setDescription(`Loaded **${this.playersData.length}** players from Google Sheets`)
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [embed] });
-  }
-
   /**
    * Handle /reset command
    */
@@ -2773,7 +2861,8 @@ export class DiscordBot {
         const currentSortColumn = this.distributionManager.sortColumn;
 
         // Refresh data from Google Sheets
-        this.playersData = await fetchPlayersDataWithDiscordNames();
+        const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+        this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
         // Create new distribution manager
         this.distributionManager = new DistributionManager();
@@ -2810,7 +2899,8 @@ export class DiscordBot {
         const currentSortColumn = this.distributionManager.sortColumn;
 
         // Refresh data from Google Sheets (keeps actions)
-        this.playersData = await fetchPlayersDataWithDiscordNames();
+        const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+        this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
         // Create new distribution manager
         this.distributionManager = new DistributionManager();
@@ -3003,6 +3093,16 @@ export class DiscordBot {
         timestamp: scheduledDate.getTime()
       };
       this.saveSchedule();
+
+      if (config.googleSheets.masterSyncEnabled) {
+        console.log('🔁 Master Sync: Copying Master_CSV -> Master_Final (on schedule creation)...');
+        await this.checkAndExecuteMasterSync();
+
+        console.log('🔄 Refreshing data from Google Sheets (Master_Final) after schedule creation...');
+        const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+        this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+        this.dataSnapshot = this.createDataSnapshot(this.playersData);
+      }
 
       console.log(`⏰ Schedule set: Will post in ${minutesUntil} minutes (${datetime} UTC)`);
       console.log(`📅 Scheduled for: ${scheduledDate.toISOString()}`);
@@ -3451,7 +3551,8 @@ export class DiscordBot {
 
       // Load distribution from Sheets
       console.log('🔄 Loading player data from Google Sheets...');
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = botState.sortColumn || 'Trophies';
       const seasonNumber = botState.seasonNumber || null;
       
@@ -3483,7 +3584,8 @@ export class DiscordBot {
         // Try to refresh data and re-distribute
         if (this.lastDistributionMessages && this.lastDistributionMessages.length > 0) {
           console.log('🔄 No distribution in memory, refreshing from Google Sheets...');
-          this.playersData = await fetchPlayersDataWithDiscordNames();
+          const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+          this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
           const sortColumn = this.distributionManager.sortColumn || 'Trophies';
           this.distributionManager.distribute(this.playersData, sortColumn);
           console.log(`✅ Distribution refreshed: ${this.playersData.length} players`);
@@ -3579,12 +3681,25 @@ export class DiscordBot {
    */
   async handleRefresh(interaction) {
     try {
+      let syncResult = null;
+      if (config.googleSheets.masterSyncEnabled) {
+        console.log('🔁 Master Sync: Copying Master_CSV -> Master_Final (manual refresh)...');
+        syncResult = await this.checkAndExecuteMasterSync();
+      }
+
       // Check if there are distribution messages to refresh
       if (!this.lastDistributionMessages || this.lastDistributionMessages.length === 0) {
+        const copiedRows = syncResult && typeof syncResult.copiedRows === 'number' ? syncResult.copiedRows : 0;
+        const froze = !!(syncResult && syncResult.frozeExistingTarget);
+
         const embed = new EmbedBuilder()
-          .setColor(0xff9900)
-          .setTitle('⚠️ No Messages to Refresh')
-          .setDescription('No distribution messages found. Please use `/swap` first to create a distribution.')
+          .setColor(0x00ff00)
+          .setTitle('✅ Refreshed')
+          .setDescription(
+            config.googleSheets.masterSyncEnabled
+              ? `Master sync completed.\nCopied **${copiedRows}** new row(s) to **${config.googleSheets.masterFinalSheetName || 'Master_Final'}**${froze ? '\n(Existing formulas were frozen to values)' : ''}.\n\nRun \/swap to create a distribution.`
+              : 'Data refreshed. Run /swap to create a distribution.'
+          )
           .setTimestamp();
 
         await interaction.editReply({ embeds: [embed] });
@@ -3612,8 +3727,9 @@ export class DiscordBot {
       }
 
       // Fetch fresh data from Google Sheets
-      console.log('🔄 Refreshing data from Google Sheets...');
-      this.playersData = await fetchPlayersDataWithDiscordNames();
+      console.log('🔄 Refreshing data from Google Sheets (Master_Final)...');
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
       if (this.playersData.length === 0) {
         const embed = new EmbedBuilder()
