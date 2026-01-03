@@ -493,7 +493,7 @@ export class DistributionManager {
    * @returns {Array<string>} Array of formatted text messages (one per clan + wildcards + footer)
    */
   getFormattedDistribution() {
-    // Header with season number
+    // Generate formatted distribution messages (3 messages: Title+RGR, OTL, RND+footer)
     // Use custom season number if provided, otherwise use config
     const seasonNum = parseInt(this.customSeasonNumber || config.seasonNumber) || 156;
     const escapeMd = (value) => {
