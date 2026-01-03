@@ -526,8 +526,13 @@ export class DiscordBot {
       if (this.autoSendMode) {
         const hasChanges = await this.checkForDataChanges();
         if (hasChanges) {
-          console.log('🔄 Auto-Send: Data changes detected! Sending distribution...');
+          console.log('🔄 Auto-Send: Data changes detected! Sending distribution once and stopping...');
           await this.executeScheduledPost();
+          // Clean up after first post (auto-send posts only once)
+          this.deleteSchedule();
+          this.scheduledPost = null;
+          this.autoSendMode = false;
+          console.log('✅ Auto-Send completed. Monitoring stopped.');
           return;
         }
         return; // No changes, continue monitoring
@@ -696,15 +701,12 @@ export class DiscordBot {
         await channel.send('❌ Error: No distribution data available. Please run /swap first.');
       }
 
-      // Clean up after sending (only if not in continuous auto-send mode)
-      if (!this.scheduledData.continuousAutoSend) {
+      // Clean up after sending
+      // Note: Auto-send cleanup is handled in checkAndExecuteSchedule
+      // Time-based posts clean up here
+      if (!this.autoSendMode) {
         this.deleteSchedule();
         this.scheduledPost = null;
-        this.autoSendMode = false;
-        this.dataSnapshot = null;
-      } else {
-        // Update snapshot for next check
-        this.dataSnapshot = this.createDataSnapshot(this.playersData);
       }
     } catch (error) {
       console.error('❌ Error sending scheduled post:', error);
