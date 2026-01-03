@@ -568,31 +568,27 @@ export class DiscordBot {
 
   /**
    * Check for data changes in Google Sheets (for auto-send mode)
-   * Compares columns B, C, D only (ignores column E - Action)
+   * Compares Master_CSV with Master_Final (columns B, C, D only - ignores column E - Action)
    */
   async checkForDataChanges() {
     try {
-      // Fetch current data
+      // Fetch data from Master_CSV (source)
+      const csvRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
+      const csvData = await fetchPlayersDataWithDiscordNames({ range: csvRange });
+      
+      // Fetch data from Master_Final (target)
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
-      const currentData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+      const finalData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       
-      // If no snapshot exists, create one and return false (no changes yet)
-      if (!this.dataSnapshot) {
-        this.dataSnapshot = this.createDataSnapshot(currentData);
-        console.log('📸 Created initial data snapshot');
-        return false;
-      }
-
-      // Create snapshot of current data
-      const currentSnapshot = this.createDataSnapshot(currentData);
+      // Create snapshots for comparison (columns B, C, D only)
+      const csvSnapshot = this.createDataSnapshot(csvData);
+      const finalSnapshot = this.createDataSnapshot(finalData);
       
-      // Compare snapshots
-      const hasChanges = JSON.stringify(this.dataSnapshot) !== JSON.stringify(currentSnapshot);
+      // Compare Master_CSV with Master_Final
+      const hasChanges = JSON.stringify(csvSnapshot) !== JSON.stringify(finalSnapshot);
       
       if (hasChanges) {
-        console.log('🔄 Data changes detected in columns B, C, or D');
-        // Update snapshot for next comparison
-        this.dataSnapshot = currentSnapshot;
+        console.log('🔄 Data changes detected: Master_CSV differs from Master_Final');
         return true;
       }
       
@@ -628,6 +624,17 @@ export class DiscordBot {
         console.error('❌ Could not find scheduled channel');
         this.deleteSchedule();
         return;
+      }
+
+      // If auto-send mode, sync Master_CSV → Master_Final first
+      if (this.autoSendMode) {
+        console.log('🔁 Auto-Send: Syncing Master_CSV → Master_Final before posting...');
+        const syncResult = await this.checkAndExecuteMasterSync(true);
+        if (syncResult && syncResult.aborted) {
+          console.warn(`⚠️ Auto-send sync skipped: ${syncResult.abortReason || 'Source empty'}`);
+        } else if (syncResult && syncResult.copiedRows > 0) {
+          console.log(`✅ Auto-Send: Synced ${syncResult.copiedRows} row(s) to Master_Final`);
+        }
       }
 
       console.log('🔄 Refreshing data from Google Sheets (Master_Final) before scheduled post...');
@@ -3099,7 +3106,6 @@ export class DiscordBot {
       console.log('🔄 Refreshing data from Google Sheets (Master_Final) after schedule creation...');
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
-      this.dataSnapshot = this.createDataSnapshot(this.playersData);
 
       console.log(`⏰ Schedule set: Will post in ${minutesUntil} minutes (${datetime} UTC)`);
       console.log(`📅 Scheduled for: ${scheduledDate.toISOString()}`);
