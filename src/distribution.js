@@ -515,7 +515,7 @@ export class DistributionManager {
       
       // Show player count only if > 0
       const countText = playerCount > 0 ? ` (${playerCount})` : '';
-      clanOutput += `**to ${groupName}${countText}:**\n`;
+      clanOutput += `**to ${groupName}${countText}:**\n\n`;
       
       if (players.length === 0) {
         clanOutput += '_No players_\n';
@@ -558,11 +558,18 @@ export class DistributionManager {
                     player['Score'] || player['score'] || '';
           }
           
-          // Format with numbering: - <@mention> trophies
+          // Get in-game name from Ingame-ID column
+          const ingameId = escapeMd(player['Ingame-ID'] || player['IngameID'] || player['ingame-id'] || '');
+          
+          // Format: - <@mention> ingame-name trophies
           let line = `- `;
           
           if (discordMention) {
             line += discordMention;
+            // Add in-game name after mention if available
+            if (ingameId) {
+              line += ` ${ingameId}`;
+            }
           } else {
             const displayName = originalName || escapeMd(this.getPlayerName(player));
             line += displayName;
@@ -614,10 +621,17 @@ export class DistributionManager {
         
         const info = this.wildcardInfo.get(identifier);
         
-        // Build line: - @mention stays/moves
+        // Get in-game name from Ingame-ID column
+        const ingameId = escapeMd(player['Ingame-ID'] || player['IngameID'] || player['ingame-id'] || '');
+        
+        // Build line: - @mention ingame-name stays/moves
         let line = '- ';
         if (discordMention) {
           line += discordMention;
+          // Add in-game name after mention if available
+          if (ingameId) {
+            line += ` ${ingameId}`;
+          }
         } else {
           const displayName = originalName || escapeMd(this.getPlayerName(player));
           line += displayName;
