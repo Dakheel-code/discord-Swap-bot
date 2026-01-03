@@ -1633,23 +1633,22 @@ export class DiscordBot {
     }
     
     try {
-      const formattedText = this.distributionManager.getFormattedDistribution();
+      // getFormattedDistribution returns array of 3 messages
+      const messages = this.distributionManager.getFormattedDistribution();
 
-      const chunks = this.splitDistributionToChunks(formattedText, 2000);
-
-      // Keep the deferred reply as a hidden placeholder (Discord can fail to render mentions on edit)
+      // Keep the deferred reply as a hidden placeholder
       await interaction.editReply({ content: '\u200B' });
 
-      // Send ALL chunks as followUps so mentions render consistently
-      for (let i = 0; i < chunks.length; i++) {
+      // Send each of the 3 messages as separate followUps
+      for (let i = 0; i < messages.length; i++) {
         await interaction.followUp({
-          content: chunks[i],
+          content: messages[i],
           ephemeral: true,
           allowedMentions: { parse: ['users'] }
         });
       }
       
-      console.log('✅ Distribution shown via Show button (ephemeral)');
+      console.log(`✅ Distribution shown via Show button (${messages.length} messages, ephemeral)`);
     } catch (error) {
       console.error('❌ Error showing distribution:', error);
       await interaction.editReply(`❌ Error: ${error.message}`);
