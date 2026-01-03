@@ -515,9 +515,9 @@ export class DistributionManager {
       // Show player count only if > 0
       const countText = playerCount > 0 ? ` (${playerCount})` : '';
       
-      // For RGR, include title on same line
+      // For RGR, include title on separate line above
       if (groupName === 'RGR') {
-        clanOutput += `<:RGR:1238937013940523008> **SWAP LIST SEASON ${seasonNum}** <:RGR:1238937013940523008> **to ${groupName}${countText}:**\n\n`;
+        clanOutput += `<:RGR:1238937013940523008> **SWAP LIST SEASON ${seasonNum}** <:RGR:1238937013940523008>\n\n**to ${groupName}${countText}:**\n\n`;
       } else {
         clanOutput += `**to ${groupName}${countText}:**\n\n`;
       }
