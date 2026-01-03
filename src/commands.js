@@ -18,12 +18,4 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('refresh')
     .setDescription('Refresh the last posted distribution message with latest sheet data'),
-
-  new SlashCommandBuilder()
-    .setName('done_temp')
-    .setDescription('Temporary solution: Mark players as done by directly editing the 3 messages'),
-
-  new SlashCommandBuilder()
-    .setName('restore_fixed')
-    .setDescription('Restore the 3 fixed distribution messages and preserve ✅ from message content'),
 ];
