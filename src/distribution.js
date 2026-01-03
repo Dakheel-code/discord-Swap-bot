@@ -558,17 +558,17 @@ export class DistributionManager {
                     player['Score'] || player['score'] || '';
           }
           
-          // Get in-game name from Ingame-ID column
-          const ingameId = escapeMd(player['Ingame-ID'] || player['IngameID'] || player['ingame-id'] || '');
+          // Get player name from Name column (column B)
+          const playerName = escapeMd(player['Name'] || player['name'] || player['Player'] || '');
           
-          // Format: - <@mention> ingame-name trophies
+          // Format: - <@mention> name trophies
           let line = `- `;
           
           if (discordMention) {
             line += discordMention;
-            // Add in-game name after mention if available
-            if (ingameId) {
-              line += ` ${ingameId}`;
+            // Add player name after mention if available
+            if (playerName) {
+              line += ` ${playerName}`;
             }
           } else {
             const displayName = originalName || escapeMd(this.getPlayerName(player));
@@ -621,16 +621,16 @@ export class DistributionManager {
         
         const info = this.wildcardInfo.get(identifier);
         
-        // Get in-game name from Ingame-ID column
-        const ingameId = escapeMd(player['Ingame-ID'] || player['IngameID'] || player['ingame-id'] || '');
+        // Get player name from Name column (column B)
+        const playerName = escapeMd(player['Name'] || player['name'] || player['Player'] || '');
         
-        // Build line: - @mention ingame-name stays/moves
+        // Build line: - @mention name stays/moves
         let line = '- ';
         if (discordMention) {
           line += discordMention;
-          // Add in-game name after mention if available
-          if (ingameId) {
-            line += ` ${ingameId}`;
+          // Add player name after mention if available
+          if (playerName) {
+            line += ` ${playerName}`;
           }
         } else {
           const displayName = originalName || escapeMd(this.getPlayerName(player));
