@@ -581,7 +581,7 @@ export class DistributionManager {
           }
           
           if (value) {
-            line += ` ${value}`;
+            line += ` **${value}**`;
           }
           if (isDone) {
             line += ' ✅';
@@ -658,9 +658,9 @@ export class DistributionManager {
         
         if (info) {
           if (info.type === 'excluded' || info.type === 'stay') {
-            line += ` stays in ${info.target}`;
+            line += ` stays in **${info.target}**`;
           } else if (info.type === 'manual') {
-            line += ` moves to ${info.target}`;
+            line += ` moves to **${info.target}**`;
           }
         }
         
