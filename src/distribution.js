@@ -503,19 +503,24 @@ export class DistributionManager {
     
     const messages = [];
     
-    // Header message
-    messages.push(`<:RGR:1238937013940523008> **SWAP LIST SEASON ${seasonNum}** <:RGR:1238937013940523008>`);
-
-    // Display main groups with "to" prefix and player count - each clan in separate message
+    // Build all clan sections first
+    const clanSections = {};
+    
     for (const groupName of config.groups.names) {
       const players = this.groups[groupName];
-      const playerCount = players.length; // Count only players in the actual group (automatic distribution)
+      const playerCount = players.length;
       
       let clanOutput = '';
       
       // Show player count only if > 0
       const countText = playerCount > 0 ? ` (${playerCount})` : '';
-      clanOutput += `**to ${groupName}${countText}:**\n\n`;
+      
+      // For RGR, include title on same line
+      if (groupName === 'RGR') {
+        clanOutput += `<:RGR:1238937013940523008> **SWAP LIST SEASON ${seasonNum}** <:RGR:1238937013940523008> **to ${groupName}${countText}:**\n\n`;
+      } else {
+        clanOutput += `**to ${groupName}${countText}:**\n\n`;
+      }
       
       if (players.length === 0) {
         clanOutput += '_No players_\n';
@@ -585,14 +590,28 @@ export class DistributionManager {
         });
       }
       
-      messages.push(clanOutput);
+      clanSections[groupName] = clanOutput;
     }
 
-    // Display WILDCARDS group (excluded + manually moved) - separate message
+    // Message 1: Title + RGR
+    if (clanSections['RGR']) {
+      messages.push(clanSections['RGR']);
+    }
+    
+    // Message 2: OTL
+    if (clanSections['OTL']) {
+      messages.push(clanSections['OTL']);
+    }
+    
+    // Message 3: RND + WILDCARDS + footer
+    let message3 = '';
+    if (clanSections['RND']) {
+      message3 += clanSections['RND'];
+    }
+    
+    // Add WILDCARDS to message 3
     if (this.groups.WILDCARDS && this.groups.WILDCARDS.length > 0) {
-      let wildcardsOutput = '';
-      
-      wildcardsOutput += `**WILDCARDS (${this.groups.WILDCARDS.length}):**\n`;
+      message3 += `\n**WILDCARDS (${this.groups.WILDCARDS.length}):**\n`;
       this.groups.WILDCARDS.forEach((player, index) => {
         // Get Discord mention and original name
         const discordMention = player.DiscordName || '';
@@ -648,21 +667,18 @@ export class DistributionManager {
         if (isDone) {
           line += ' ✅';
         }
-        wildcardsOutput += line + '\n';
+        message3 += line + '\n';
       });
-      
-      messages.push(wildcardsOutput);
     }
-
-    // Footer message - separate message
-    let footer = '';
-    footer += 'Stop: ❌  Hold: ✋  Done: ✅\n\n';
-    footer += '**IF SOMEONE IN __RGR OR OTL__ CAN\'T PLAY AT RESET, PLEASE CONTACT LEADERSHIP!**\n\n';
-    footer += 'AND DON\'T FORGET TO HIT MANTICORE BEFORE YOU MOVE!\n\n';
-    footer += '❗**18-HOUR-RULE**❗\n';
-    footer += '__Anyone on the swap list who hasn\'t moved within 18 hours after reset will be automatically kicked from their current clan, replaced and must apply on their own to RND.__';
     
-    messages.push(footer);
+    // Add footer to message 3
+    message3 += '\nStop: ❌  Hold: ✋  Done: ✅\n\n';
+    message3 += '**IF SOMEONE IN __RGR OR OTL__ CAN\'T PLAY AT RESET, PLEASE CONTACT LEADERSHIP!**\n\n';
+    message3 += 'AND DON\'T FORGET TO HIT MANTICORE BEFORE YOU MOVE!\n\n';
+    message3 += '❗**18-HOUR-RULE**❗\n';
+    message3 += '__Anyone on the swap list who hasn\'t moved within 18 hours after reset will be automatically kicked from their current clan, replaced and must apply on their own to RND.__';
+    
+    messages.push(message3);
 
     return messages;
   }
