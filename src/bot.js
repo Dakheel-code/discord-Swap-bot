@@ -631,24 +631,36 @@ export class DiscordBot {
         return;
       }
 
-      // If auto-send mode, sync Master_CSV → Master_Final first
-      if (this.autoSendMode) {
-        console.log('🔁 Auto-Send: Syncing Master_CSV → Master_Final before posting...');
-        const syncResult = await this.checkAndExecuteMasterSync(true);
-        if (syncResult && syncResult.aborted) {
-          console.warn(`⚠️ Auto-send sync skipped: ${syncResult.abortReason || 'Source empty'}`);
-        } else if (syncResult && syncResult.copiedRows > 0) {
-          console.log(`✅ Auto-Send: Synced ${syncResult.copiedRows} row(s) to Master_Final`);
-        }
+      // Sync Master_CSV → Master_Final before posting (for both auto-send and regular schedule)
+      console.log('🔁 Syncing Master_CSV → Master_Final before scheduled post...');
+      const syncResult = await this.checkAndExecuteMasterSync(true);
+      if (syncResult && syncResult.aborted) {
+        console.warn(`⚠️ Sync skipped: ${syncResult.abortReason || 'Source empty'}`);
+        await channel.send(`⚠️ Warning: Could not sync Master_CSV to Master_Final. ${syncResult.abortReason || 'Source appears empty'}`);
+      } else if (syncResult && syncResult.copiedRows > 0) {
+        console.log(`✅ Synced ${syncResult.copiedRows} row(s) to Master_Final`);
       }
 
       console.log('🔄 Refreshing data from Google Sheets (Master_Final) before scheduled post...');
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       
+      console.log(`📊 Players data loaded: ${this.playersData.length} players`);
+      
+      // Check if we have enough data
+      if (!this.playersData || this.playersData.length === 0) {
+        console.error('❌ No players data found in Master_Final');
+        await channel.send('❌ Error: No players data found in Master_Final sheet. Please check:\n' +
+          '1. Master_CSV has data\n' +
+          '2. Master_Final is accessible\n' +
+          '3. Run /refresh to sync manually');
+        this.deleteSchedule();
+        return;
+      }
+      
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       this.distributionManager.distribute(this.playersData, sortColumn);
-      console.log(`✅ Data refreshed: ${this.playersData.length} players`);
+      console.log(`✅ Distribution completed for ${this.playersData.length} players`);
       
       const formattedText = this.distributionManager.getFormattedDistribution();
       
