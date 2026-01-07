@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType } from 'discord.js';
 import { config } from './config.js';
 import { commands } from './commands.js';
-import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions, saveBotState, loadBotState, updateBotState, syncMasterCsvToFinal } from './sheets.js';
+import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions, saveBotState, loadBotState, updateBotState, syncMasterCsvToFinal, syncDiscordMapNamesFromMasterCsv } from './sheets.js';
 import { DistributionManager } from './distribution.js';
 import fs from 'fs';
 
@@ -247,6 +247,12 @@ export class DiscordBot {
     
     // Start schedule checker (runs every minute)
     this.startScheduleChecker();
+
+    try {
+      await syncDiscordMapNamesFromMasterCsv();
+    } catch (error) {
+      console.warn(`⚠️ Failed to sync DiscordMap Name column: ${error.message}`);
+    }
     
     this.isReady = true;
     console.log('🤖 Bot is ready to receive commands!');
@@ -2091,16 +2097,8 @@ export class DiscordBot {
         }
         
         try {
-          // Try to fetch the user to verify the ID exists
-          const user = await this.client.users.fetch(discordId).catch(() => null);
-          
-          if (!user) {
-            await interaction.editReply(`❌ Could not find a Discord user with ID: ${discordId}`);
-            return;
-          }
-          
-          // Map the player
-          const success = await writeDiscordMapping(ingameId, discordId, user.username);
+          // Map the player (A=Ingame-ID, B=Discord-ID, D=Name from Master_CSV)
+          const success = await writeDiscordMapping(ingameId, discordId);
           
           if (success) {
             const embed = new EmbedBuilder()
@@ -3317,8 +3315,8 @@ export class DiscordBot {
     const discordUser = interaction.options.getUser('discord_id');
 
     try {
-      // Write to DiscordMap sheet with username
-      await writeDiscordMapping(ingameId, discordUser.id, discordUser.username);
+      // Write to DiscordMap sheet: A=Ingame-ID, B=Discord-ID, D=Name from Master_CSV
+      await writeDiscordMapping(ingameId, discordUser.id);
 
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
@@ -3326,8 +3324,7 @@ export class DiscordBot {
         .setDescription(`Successfully mapped **${ingameId}** to ${discordUser}`)
         .addFields(
           { name: 'In-game ID', value: ingameId, inline: true },
-          { name: 'Discord User', value: `${discordUser.tag} (${discordUser.id})`, inline: true },
-          { name: 'Username', value: `@${discordUser.username}`, inline: true }
+          { name: 'Discord User', value: `${discordUser.tag} (${discordUser.id})`, inline: true }
         )
         .setTimestamp();
 

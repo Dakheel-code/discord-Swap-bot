@@ -17,6 +17,220 @@ function safeJsonParse(raw, contextLabel = 'JSON') {
   }
 }
 
+async function ensureDiscordMapHeaders() {
+  if (!sheetsClientWithAuth) {
+    return false;
+  }
+
+  const desired = ['Ingame-ID', 'Discord-ID', 'Action', 'Name'];
+
+  try {
+    const res = await sheetsClient.spreadsheets.values.get({
+      spreadsheetId: config.googleSheets.sheetId,
+      range: 'DiscordMap!A1:D1',
+    });
+
+    const current = (res.data.values && res.data.values[0]) ? res.data.values[0] : [];
+
+    let needsUpdate = false;
+    for (let i = 0; i < desired.length; i++) {
+      const cur = current[i] ? String(current[i]).trim() : '';
+      if (cur !== desired[i]) {
+        needsUpdate = true;
+        break;
+      }
+    }
+
+    if (!needsUpdate) {
+      return true;
+    }
+
+    await sheetsClientWithAuth.spreadsheets.values.update({
+      spreadsheetId: config.googleSheets.sheetId,
+      range: 'DiscordMap!A1:D1',
+      valueInputOption: 'RAW',
+      resource: { values: [desired] },
+    });
+
+    try {
+      const dataRes = await sheetsClient.spreadsheets.values.get({
+        spreadsheetId: config.googleSheets.sheetId,
+        range: 'DiscordMap!A:D',
+      });
+
+      const rows = dataRes.data.values || [];
+      if (rows.length > 1) {
+        const updates = [];
+
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i] || [];
+          const ingameId = row[0] ? String(row[0]).trim() : '';
+          const colB = row[1] ? String(row[1]).trim() : '';
+          const action = row[2] ? String(row[2]).trim() : '';
+          const colD = row[3] ? String(row[3]).trim() : '';
+
+          const bLooksLikeId = /^\d{17,20}$/.test(colB);
+          const dLooksLikeId = /^\d{17,20}$/.test(colD);
+
+          if (!bLooksLikeId && dLooksLikeId && ingameId) {
+            updates.push({
+              range: `DiscordMap!A${i + 1}:D${i + 1}`,
+              values: [[ingameId, colD, action, '']],
+            });
+          }
+        }
+
+        if (updates.length) {
+          await sheetsClientWithAuth.spreadsheets.values.batchUpdate({
+            spreadsheetId: config.googleSheets.sheetId,
+            resource: {
+              valueInputOption: 'RAW',
+              data: updates,
+            },
+          });
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to migrate legacy DiscordMap columns:', error.message);
+    }
+
+    return true;
+  } catch (error) {
+    console.warn('⚠️ Failed to ensure DiscordMap headers:', error.message);
+    return false;
+  }
+}
+
+function normalizeHeader(header) {
+  return String(header || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[-_]/g, '');
+}
+
+function findHeaderIndex(headers, candidates) {
+  const normalized = headers.map(h => normalizeHeader(h));
+  const want = candidates.map(c => normalizeHeader(c));
+  for (let i = 0; i < normalized.length; i++) {
+    if (want.includes(normalized[i])) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+async function buildMasterCsvNameMap() {
+  if (!sheetsClient) {
+    throw new Error('Sheets client not initialized');
+  }
+
+  const sheetName = config.googleSheets.masterCsvSheetName || 'Master_CSV';
+  const range = `${sheetName}!A:Z`;
+
+  const response = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: config.googleSheets.sheetId,
+    range,
+  });
+
+  const rows = response.data.values || [];
+  if (!rows.length) {
+    return new Map();
+  }
+
+  const headers = rows[0] || [];
+  const ingameIdIdx = findHeaderIndex(headers, [
+    'Ingame-ID',
+    'IngameID',
+    'Ingame_ID',
+    'Player_ID',
+    'PlayerID',
+    'ID',
+  ]);
+
+  const nameIdx = findHeaderIndex(headers, [
+    'Name',
+    'Player',
+    'PlayerName',
+    'Username',
+  ]);
+
+  if (ingameIdIdx === -1 || nameIdx === -1) {
+    return new Map();
+  }
+
+  const map = new Map();
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const ingameId = row[ingameIdIdx] ? String(row[ingameIdIdx]).trim() : '';
+    const name = row[nameIdx] ? String(row[nameIdx]).trim() : '';
+    if (ingameId) {
+      map.set(ingameId, name);
+    }
+  }
+
+  return map;
+}
+
+export async function syncDiscordMapNamesFromMasterCsv() {
+  if (!sheetsClientWithAuth) {
+    throw new Error('Write access not available. Please configure Service Account credentials in .env file (GOOGLE_SERVICE_ACCOUNT_PATH)');
+  }
+
+  await ensureDiscordMapHeaders();
+
+  const nameMap = await buildMasterCsvNameMap();
+  if (!nameMap.size) {
+    return { updated: 0, skipped: 0 };
+  }
+
+  const response = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: config.googleSheets.sheetId,
+    range: 'DiscordMap!A:D',
+  });
+
+  const rows = response.data.values || [];
+  if (rows.length <= 1) {
+    return { updated: 0, skipped: 0 };
+  }
+
+  const data = [];
+  let updated = 0;
+  let skipped = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const ingameId = row[0] ? String(row[0]).trim() : '';
+    const currentName = row[3] ? String(row[3]).trim() : '';
+    if (!ingameId) {
+      skipped++;
+      continue;
+    }
+    if (currentName) {
+      skipped++;
+      continue;
+    }
+    const masterName = nameMap.get(ingameId);
+    if (!masterName) {
+      skipped++;
+      continue;
+    }
+    updated++;
+    data.push({ range: `DiscordMap!D${i + 1}`, values: [[masterName]] });
+  }
+
+  if (data.length) {
+    await sheetsClientWithAuth.spreadsheets.values.batchUpdate({
+      spreadsheetId: config.googleSheets.sheetId,
+      resource: {
+        valueInputOption: 'RAW',
+        data,
+      },
+    });
+  }
+
+  return { updated, skipped };
+}
+
 function columnIndexToLetter(index) {
   let result = '';
   let n = index + 1;
@@ -380,10 +594,10 @@ export async function fetchDiscordMapping() {
       const row = rows[i];
       if (row[0]) { // At least Player_ID must exist
         const playerId = String(row[0]).trim();
-        const discordName = row[1] ? String(row[1]).trim() : '';
+        const discordId = row[1] ? String(row[1]).trim() : '';
         const action = row[2] ? String(row[2]).trim() : '';
-        const discordId = row[3] ? String(row[3]).trim() : ''; // Discord-ID from column D
-        mapping.set(playerId, { discordName, action, discordId });
+        const name = row[3] ? String(row[3]).trim() : '';
+        mapping.set(playerId, { discordId, action, name });
       }
     }
 
@@ -422,39 +636,23 @@ export async function fetchPlayersDataWithDiscordNames(options = {}) {
       
       if (ingameId && discordMapping.has(String(ingameId).trim())) {
         const mappingData = discordMapping.get(String(ingameId).trim());
-        let discordName = mappingData.discordName;
-        let discordId = mappingData.discordId; // Get Discord-ID from column D
+        let discordId = mappingData.discordId;
+        let discordName = '';
         const action = mappingData.action;
         
-        // Priority 1: Use Discord-ID from column D if available
-        if (discordId && /^\d+$/.test(discordId.trim())) {
-          // We have a valid Discord ID - create mention
-          discordId = discordId.trim();
+        if (discordId && /^\d{17,20}$/.test(String(discordId).trim())) {
+          discordId = String(discordId).trim();
           discordName = `<@${discordId}>`;
           playersWithDiscordId++;
           playersWithMention++;
-        }
-        // Priority 2: Check if discordName (column B) is a Discord ID
-        else if (discordName && /^\d+$/.test(discordName.trim())) {
-          // Column B contains Discord ID
-          discordId = discordName.trim();
-          discordName = `<@${discordId}>`;
-          playersWithDiscordId++;
-          playersWithMention++;
-        }
-        // Priority 3: Check if discordName already has <@...> format
-        else if (discordName && discordName.startsWith('<@') && discordName.endsWith('>')) {
-          const match = discordName.match(/<@!?(\d+)>/);
+        } else if (discordId && String(discordId).startsWith('<@') && String(discordId).endsWith('>')) {
+          const match = String(discordId).match(/<@!?(\d+)>/);
           if (match) {
             discordId = match[1];
+            discordName = `<@${discordId}>`;
             playersWithDiscordId++;
             playersWithMention++;
           }
-        }
-        // Priority 4: It's a username - add @ prefix (no mention)
-        else if (discordName && !discordName.startsWith('@')) {
-          discordName = '@' + discordName;
-          discordId = null; // No Discord ID available
         }
         
         player.DiscordName = discordName; // This will be the mention for messages
@@ -517,6 +715,11 @@ export async function writeDiscordMapping(ingameId, discordId, discordUsername =
   }
 
   try {
+    await ensureDiscordMapHeaders();
+
+    const masterNameMap = await buildMasterCsvNameMap();
+    const masterName = masterNameMap.get(String(ingameId).trim()) || '';
+
     // Get all current data from DiscordMap sheet
     const response = await sheetsClient.spreadsheets.values.get({
       spreadsheetId: config.googleSheets.sheetId,
@@ -543,7 +746,7 @@ export async function writeDiscordMapping(ingameId, discordId, discordUsername =
 
     // Prepare the data to write: A=Ingame-ID, B=Discord-ID, C=Action, D=Username
     // Preserve existing Action (column C) if present
-    const values = [[ingameId, discordId, existingAction, discordUsername]];
+    const values = [[ingameId, discordId, existingAction, masterName]];
 
     if (rowIndex > 0) {
       // Update existing row
@@ -587,7 +790,7 @@ async function getIngameId(playerName) {
       // Get DiscordMap data
       const response = await sheetsClient.spreadsheets.values.get({
         spreadsheetId: config.googleSheets.sheetId,
-        range: 'DiscordMap!A:C',
+        range: 'DiscordMap!A:B',
       });
 
       const rows = response.data.values || [];
@@ -596,8 +799,7 @@ async function getIngameId(playerName) {
       for (let i = 1; i < rows.length; i++) {
         const rowDiscordId = rows[i][1]; // Column B
         if (rowDiscordId && String(rowDiscordId).trim() === discordId) {
-          // Return Ingame-ID from column C (index 2)
-          const ingameId = rows[i][2];
+          const ingameId = rows[i][0];
           if (ingameId) {
             console.log(`✅ Found Ingame-ID "${ingameId}" for Discord mention ${playerName}`);
             return String(ingameId).trim();
