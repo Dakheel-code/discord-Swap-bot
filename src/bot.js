@@ -5,6 +5,10 @@ import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns
 import { DistributionManager } from './distribution.js';
 import fs from 'fs';
 
+const BUILD_TAG = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'dev';
+
+console.log(`🚀 Discord Bot starting up (build: ${BUILD_TAG})`);
+
 export class DiscordBot {
   constructor() {
     this.client = new Client({
@@ -230,6 +234,7 @@ export class DiscordBot {
    */
   async onReady() {
     console.log(`✅ Bot logged in as ${this.client.user.tag}`);
+    console.log(`🏷️ Build: ${BUILD_TAG}`);
     
     // Register slash commands
     await this.registerCommands();
@@ -663,8 +668,17 @@ export class DiscordBot {
       console.log(`✅ Distribution completed for ${this.playersData.length} players`);
       
       const formattedText = this.distributionManager.getFormattedDistribution();
+      const hasDistributionData = Array.isArray(formattedText)
+        ? formattedText.some(t => typeof t === 'string' && t.trim().length > 0)
+        : typeof formattedText === 'string' && formattedText.trim().length > 0;
       
-      if (formattedText && formattedText.length > 50) {
+      console.log(
+        `🧾 Scheduled distribution output: type=${Array.isArray(formattedText) ? 'array' : typeof formattedText}, ` +
+        `messages=${Array.isArray(formattedText) ? formattedText.length : 1}, ` +
+        `hasData=${hasDistributionData}`
+      );
+
+      if (hasDistributionData) {
         await this.sendLongMessage(channel, formattedText, true, true);
         console.log(`✅ Scheduled post sent to ${channel.name}`);
         
@@ -710,7 +724,21 @@ export class DiscordBot {
         }
       } else {
         console.error('❌ No distribution data to send');
-        await channel.send('❌ Error: No distribution data available. Please run /swap first.');
+        const groupCounts = {
+          RGR: this.distributionManager.groups.RGR?.length || 0,
+          OTL: this.distributionManager.groups.OTL?.length || 0,
+          RND: this.distributionManager.groups.RND?.length || 0,
+          WILDCARDS: this.distributionManager.groups.WILDCARDS?.length || 0,
+        };
+        const outputDiagnostics = Array.isArray(formattedText)
+          ? formattedText.map((t) => (typeof t === 'string' ? t.trim().length : -1)).join(',')
+          : (typeof formattedText === 'string' ? formattedText.trim().length : -1);
+
+        await channel.send(
+          '❌ Error: No distribution data available. Please run /swap first.\n' +
+          `Debug: players=${this.playersData?.length || 0}, groups=${JSON.stringify(groupCounts)}, ` +
+          `outputType=${Array.isArray(formattedText) ? 'array' : typeof formattedText}, outputLengths=${outputDiagnostics}, build=${BUILD_TAG}`
+        );
       }
 
       // Clean up after sending
