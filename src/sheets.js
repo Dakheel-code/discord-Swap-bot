@@ -526,16 +526,24 @@ export async function writeDiscordMapping(ingameId, discordId, discordUsername =
     const rows = response.data.values || [];
     let rowIndex = -1;
 
-    // Check if Discord ID already exists in column B
+    const ingameKey = String(ingameId).trim();
+    const discordKey = String(discordId).trim();
+    let existingAction = '';
+
+    // Update existing row if either Ingame-ID (col A) or Discord-ID (col B) already exists
     for (let i = 1; i < rows.length; i++) {
-      if (rows[i][1] && String(rows[i][1]).trim() === String(discordId).trim()) {
+      const rowIngame = rows[i][0] ? String(rows[i][0]).trim() : '';
+      const rowDiscord = rows[i][1] ? String(rows[i][1]).trim() : '';
+      if ((rowIngame && rowIngame === ingameKey) || (rowDiscord && rowDiscord === discordKey)) {
         rowIndex = i + 1; // +1 because sheets are 1-indexed
+        existingAction = rows[i][2] ? String(rows[i][2]).trim() : '';
         break;
       }
     }
 
     // Prepare the data to write: A=Ingame-ID, B=Discord-ID, C=Action, D=Username
-    const values = [[ingameId, discordId, '', discordUsername]];
+    // Preserve existing Action (column C) if present
+    const values = [[ingameId, discordId, existingAction, discordUsername]];
 
     if (rowIndex > 0) {
       // Update existing row

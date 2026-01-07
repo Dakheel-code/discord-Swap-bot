@@ -2100,7 +2100,7 @@ export class DiscordBot {
           }
           
           // Map the player
-          const success = await mapPlayerToDiscord(ingameId, discordId);
+          const success = await writeDiscordMapping(ingameId, discordId, user.username);
           
           if (success) {
             const embed = new EmbedBuilder()
