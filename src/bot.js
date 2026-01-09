@@ -314,7 +314,7 @@ export class DiscordBot {
     try {
       const data = {
         channelId: this.lastChannelId,
-        distributionMessageIds: this.lastDistributionMessages.map(msg => msg.id),
+        distributionMessageIds: this.lastDistributionMessages.slice(-3).map(msg => msg.id),
         swapsLeftMessageIds: this.lastSwapsLeftMessages.map(msg => msg.id),
         sortColumn: this.distributionManager.sortColumn || 'Trophies',
         seasonNumber: this.distributionManager.customSeasonNumber || null,
@@ -377,8 +377,9 @@ export class DiscordBot {
       }
 
       const distributionIds = data.distributionMessageIds || data.messageIds || []; // Support old format
-      if (channel && distributionIds.length > 0) {
-        for (const messageId of distributionIds) {
+      const distributionIdsToLoad = distributionIds.slice(-3);
+      if (channel && distributionIdsToLoad.length > 0) {
+        for (const messageId of distributionIdsToLoad) {
           try {
             const message = await channel.messages.fetch(messageId);
             this.lastDistributionMessages.push(message);
@@ -2523,7 +2524,7 @@ export class DiscordBot {
 
     const stateToSave = {
       channelId: this.lastChannelId,
-      distributionMessageIds: this.lastDistributionMessages.map(msg => msg.id),
+      distributionMessageIds: this.lastDistributionMessages.slice(-3).map(msg => msg.id),
       swapsLeftMessageIds: this.lastSwapsLeftMessages.map(msg => msg.id),
       sortColumn: this.distributionManager.sortColumn || 'Trophies',
       seasonNumber: this.distributionManager.customSeasonNumber || seasonNumber || null,
@@ -3614,7 +3615,7 @@ export class DiscordBot {
           .setColor(0x00ff00)
           .setTitle('✅ Refreshed')
           .setDescription(
-            `Master sync completed.\nCopied **${copiedRows}** row(s) to **${config.googleSheets.masterFinalSheetName || 'Master_Final'}**${froze ? '\n(Existing formulas were frozen to values)' : ''}.\n\nRun \/swap to create a distribution.`
+            `Master sync completed.\nCopied values only from **Master_CSV** to **${config.googleSheets.masterFinalSheetName || 'Master_Final'}** (snapshot).\nCopied **${copiedRows}** row(s)${froze ? '\n(Existing formulas were frozen to values)' : ''}.\n\nRun \/swap to create a distribution.`
           )
           .setTimestamp();
 
@@ -3789,19 +3790,24 @@ export class DiscordBot {
 
     const messagesToUpdate = Math.min(sanitizedMessages.length, this.lastDistributionMessages.length);
 
-    // Update existing messages
+    // Update only the latest saved messages (ignore older ones)
+    const messageStartIndex = this.lastDistributionMessages.length - messagesToUpdate;
+    const contentStartIndex = sanitizedMessages.length - messagesToUpdate;
+
     for (let i = 0; i < messagesToUpdate; i++) {
-      if (i < this.lastDistributionMessages.length) {
-        try {
-          console.log(`✅ Updating message ${i + 1}/${messagesToUpdate} (${sanitizedMessages[i].length} chars)`);
-          await this.lastDistributionMessages[i].edit({
-            content: sanitizedMessages[i],
-            allowedMentions: { parse: ['users'] }
-          });
-          console.log(`✅ Message ${i + 1} updated successfully`);
-        } catch (error) {
-          console.error(`❌ Failed to edit message ${i + 1}:`, error.message);
-        }
+      const messageIndex = messageStartIndex + i;
+      const contentIndex = contentStartIndex + i;
+      try {
+        console.log(
+          `✅ Updating message ${i + 1}/${messagesToUpdate} (savedIndex=${messageIndex}, ${sanitizedMessages[contentIndex].length} chars)`
+        );
+        await this.lastDistributionMessages[messageIndex].edit({
+          content: sanitizedMessages[contentIndex],
+          allowedMentions: { parse: ['users'] }
+        });
+        console.log(`✅ Message ${i + 1} updated successfully`);
+      } catch (error) {
+        console.error(`❌ Failed to edit message ${i + 1}:`, error.message);
       }
     }
 
