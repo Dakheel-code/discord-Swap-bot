@@ -1286,6 +1286,25 @@ export class DiscordBot {
       
       const player = this.playersData[playerIndex];
       const playerName = player.Name || player.Player || player.USERNAME || 'Unknown';
+
+      const ingameIdRaw = player['Ingame-ID'] || player['IngameID'] || player['Ingame_ID'] || player['INGAME-ID'] || 
+                       player['Player_ID'] || player['PlayerID'] || player['ID'] || player['player_id'] ||
+                       player.OriginalName || playerName;
+
+      let ingameId = ingameIdRaw ? String(ingameIdRaw).trim() : null;
+
+      // Normalize common trailing clan tags in some name formats (e.g., "NO MERCY rgr")
+      if (ingameId) {
+        const partsForNormalize = ingameId.split(/\s+/).filter(Boolean);
+        if (partsForNormalize.length >= 2) {
+          const last = partsForNormalize[partsForNormalize.length - 1];
+          const lastAscii = String(last).replace(/[^a-z]/gi, '').toLowerCase();
+          if (lastAscii === 'rgr' || lastAscii === 'otl' || lastAscii === 'rnd') {
+            partsForNormalize.pop();
+            ingameId = partsForNormalize.join(' ').trim();
+          }
+        }
+      }
       
       // Get Discord ID from player data (more reliable than from value)
       const discordId = player['Discord-ID'] || (discordIdFromValue !== 'no_id' ? discordIdFromValue : null);
@@ -1298,6 +1317,7 @@ export class DiscordBot {
       selectedPlayers.push({
         index: playerIndex,
         discordId: discordId,
+        ingameId: ingameId || null,
         name: playerName
       });
     }
@@ -1373,10 +1393,10 @@ export class DiscordBot {
     
     try {
       for (const playerData of playersArray) {
-        const { discordId, name: playerName, index: playerIndex } = playerData;
-        
-        if (!discordId) {
-          failList.push(`${playerName} (no Discord ID)`);
+        const { discordId, ingameId, name: playerName, index: playerIndex } = playerData;
+
+        if (!discordId && !ingameId) {
+          failList.push(`${playerName} (no Discord ID or Ingame-ID)`);
           continue;
         }
         
@@ -1394,12 +1414,17 @@ export class DiscordBot {
         
         // Write action to Google Sheet
         console.log(`📝 Writing action: "${playerName}" -> ${actionToWrite}`);
-        await writePlayerAction(discordId, actionToWrite);
-        
-        if (actionToWrite === 'Hold') {
-          successList.push(`${playerName} → HOLD`);
-        } else {
-          successList.push(`${playerName} → ${targetClan}`);
+        try {
+          await writePlayerAction(discordId, actionToWrite, ingameId);
+
+          if (actionToWrite === 'Hold') {
+            successList.push(`${playerName} → HOLD`);
+          } else {
+            successList.push(`${playerName} → ${targetClan}`);
+          }
+        } catch (error) {
+          const reason = error && error.message ? error.message : 'Unknown error';
+          failList.push(`${playerName} (${reason})`);
         }
       }
       
@@ -1465,17 +1490,22 @@ export class DiscordBot {
     
     try {
       for (const playerData of playersArray) {
-        const { discordId, name: playerName } = playerData;
-        
-        if (!discordId) {
-          failList.push(`${playerName} (no Discord ID)`);
+        const { discordId, ingameId, name: playerName } = playerData;
+
+        if (!discordId && !ingameId) {
+          failList.push(`${playerName} (no Discord ID or Ingame-ID)`);
           continue;
         }
         
         // Clear action from Google Sheet
-        console.log(`♻️ Clearing action for player "${playerName}" (discordId: ${discordId})`);
-        await clearPlayerAction(discordId);
-        successList.push(playerName);
+        console.log(`♻️ Clearing action for player "${playerName}" (discordId: ${discordId || ''}, ingameId: ${ingameId || ''})`);
+        try {
+          await clearPlayerAction(discordId, ingameId);
+          successList.push(playerName);
+        } catch (error) {
+          const reason = error && error.message ? error.message : 'Unknown error';
+          failList.push(`${playerName} (${reason})`);
+        }
       }
       
       // Refresh and redistribute once after all changes

@@ -829,7 +829,14 @@ export async function writePlayerAction(discordId, action) {
   }
 
   try {
-    console.log(`🔍 Searching for Discord ID: "${discordId}" in DiscordMap sheet`);
+    let ingameId = null;
+    if (arguments.length >= 3) {
+      ingameId = arguments[2];
+    }
+
+    console.log(
+      `🔍 Searching for player in DiscordMap sheet (discordId="${discordId || ''}", ingameId="${ingameId || ''}")`
+    );
     
     // Get DiscordMap sheet data
     const discordMapResponse = await sheetsClient.spreadsheets.values.get({
@@ -845,6 +852,19 @@ export async function writePlayerAction(discordId, action) {
     console.log(`📊 DiscordMap: ${discordMapRows.length} rows`);
     console.log(`📋 DiscordMap Headers: ${discordMapRows[0] ? discordMapRows[0].join(' | ') : 'No headers'}`);
     
+    // Find Ingame-ID column (default to column A)
+    let ingameIdCol = 0;
+
+    if (discordMapRows[0]) {
+      for (let col = 0; col < discordMapRows[0].length; col++) {
+        const header = String(discordMapRows[0][col]).toLowerCase().trim();
+        if (header.includes('ingame') || header.includes('player_id') || header === 'id') {
+          ingameIdCol = col;
+          break;
+        }
+      }
+    }
+
     // Find Discord-ID column
     let discordIdCol = -1;
     
@@ -865,30 +885,61 @@ export async function writePlayerAction(discordId, action) {
       console.log(`⚠️ Discord-ID column not found, assuming column B (index 1)`);
     }
     
-    // Find player by Discord ID
+    // Find player by Discord ID (preferred) or Ingame-ID (fallback)
     let rowIndex = -1;
-    
-    console.log(`🔍 Searching for Discord ID "${discordId}" in column ${discordIdCol}...`);
-    
-    for (let i = 1; i < discordMapRows.length; i++) {
-      const rowDiscordId = discordMapRows[i][discordIdCol];
-      
-      // Debug: Log first 5 rows
-      if (i <= 5) {
-        console.log(`  Row ${i + 1}: Discord-ID = "${rowDiscordId}" (comparing with "${discordId}")`);
+
+    if (discordId) {
+      console.log(`🔍 Searching for Discord ID "${discordId}" in column ${discordIdCol}...`);
+
+      for (let i = 1; i < discordMapRows.length; i++) {
+        const rowDiscordId = discordMapRows[i][discordIdCol];
+
+        // Debug: Log first 5 rows
+        if (i <= 5) {
+          console.log(`  Row ${i + 1}: Discord-ID = "${rowDiscordId}" (comparing with "${discordId}")`);
+        }
+
+        if (rowDiscordId && String(rowDiscordId).trim() === String(discordId).trim()) {
+          rowIndex = i + 1; // +1 because sheets are 1-indexed
+          console.log(`✅ Found Discord ID at row ${rowIndex}`);
+          break;
+        }
       }
-      
-      if (rowDiscordId && String(rowDiscordId).trim() === String(discordId).trim()) {
-        rowIndex = i + 1; // +1 because sheets are 1-indexed
-        console.log(`✅ Found Discord ID at row ${rowIndex}`);
-        break;
+    }
+
+    if (rowIndex === -1 && ingameId) {
+      console.log(`🔍 Discord ID not found. Falling back to Ingame-ID "${ingameId}" in column ${ingameIdCol}...`);
+
+      for (let i = 1; i < discordMapRows.length; i++) {
+        const rowIngameId = discordMapRows[i][ingameIdCol];
+        if (rowIngameId && String(rowIngameId).trim().toLowerCase() === String(ingameId).trim().toLowerCase()) {
+          rowIndex = i + 1;
+          console.log(`✅ Found Ingame-ID at row ${rowIndex}`);
+          break;
+        }
       }
     }
 
     if (rowIndex === -1) {
+      if (ingameId) {
+        console.log(`🆕 No existing DiscordMap row found. Appending new row for Ingame-ID "${ingameId}" with action "${action}"`);
+
+        await sheetsClientWithAuth.spreadsheets.values.append({
+          spreadsheetId: config.googleSheets.sheetId,
+          range: 'DiscordMap!A:D',
+          valueInputOption: 'RAW',
+          insertDataOption: 'INSERT_ROWS',
+          resource: { values: [[String(ingameId).trim(), '', action, '']] },
+        });
+
+        return true;
+      }
+
       const allDiscordIds = discordMapRows.slice(1, Math.min(11, discordMapRows.length))
-        .map((r, idx) => `Row ${idx + 2}: Discord-ID="${r[discordIdCol] || 'empty'}"`).join('\n');
-      throw new Error(`Player not found: Discord ID "${discordId}" not found in DiscordMap sheet (Column: ${discordMapRows[0][discordIdCol]}).\n\nFirst 10 rows:\n${allDiscordIds}\n\nPlease use /map command to link this player first.`);
+        .map((r, idx) => `Row ${idx + 2}: Discord-ID="${r[discordIdCol] || 'empty'}", Ingame-ID="${r[ingameIdCol] || 'empty'}"`).join('\n');
+      throw new Error(
+        `Player not found: Discord ID "${discordId || ''}" and Ingame-ID "${ingameId || ''}" not found in DiscordMap sheet.\n\nFirst 10 rows:\n${allDiscordIds}`
+      );
     }
 
     // Write to column C (Action) in DiscordMap
@@ -920,7 +971,14 @@ export async function clearPlayerAction(discordId) {
   }
 
   try {
-    console.log(`🔍 Clearing action for Discord ID: "${discordId}" in DiscordMap`);
+    let ingameId = null;
+    if (arguments.length >= 2) {
+      ingameId = arguments[1];
+    }
+
+    console.log(
+      `🔍 Clearing action in DiscordMap (discordId="${discordId || ''}", ingameId="${ingameId || ''}")`
+    );
     
     // Get DiscordMap sheet data
     const discordMapResponse = await sheetsClient.spreadsheets.values.get({
@@ -935,6 +993,19 @@ export async function clearPlayerAction(discordId) {
     
     console.log(`📊 DiscordMap: ${discordMapRows.length} rows`);
     
+    // Find Ingame-ID column (default to column A)
+    let ingameIdCol = 0;
+
+    if (discordMapRows[0]) {
+      for (let col = 0; col < discordMapRows[0].length; col++) {
+        const header = String(discordMapRows[0][col]).toLowerCase().trim();
+        if (header.includes('ingame') || header.includes('player_id') || header === 'id') {
+          ingameIdCol = col;
+          break;
+        }
+      }
+    }
+
     // Find Discord-ID column
     let discordIdCol = -1;
     
@@ -953,20 +1024,33 @@ export async function clearPlayerAction(discordId) {
       discordIdCol = 1;
     }
     
-    // Find player row in DiscordMap
+    // Find player row in DiscordMap (Discord-ID preferred, Ingame-ID fallback)
     let rowIndex = -1;
-    
-    for (let i = 1; i < discordMapRows.length; i++) {
-      const rowDiscordId = discordMapRows[i][discordIdCol];
-      if (rowDiscordId && String(rowDiscordId).trim() === String(discordId).trim()) {
-        rowIndex = i + 1; // +1 because sheets are 1-indexed
-        console.log(`✅ Found player at row ${rowIndex} in DiscordMap`);
-        break;
+
+    if (discordId) {
+      for (let i = 1; i < discordMapRows.length; i++) {
+        const rowDiscordId = discordMapRows[i][discordIdCol];
+        if (rowDiscordId && String(rowDiscordId).trim() === String(discordId).trim()) {
+          rowIndex = i + 1; // +1 because sheets are 1-indexed
+          console.log(`✅ Found player at row ${rowIndex} in DiscordMap`);
+          break;
+        }
+      }
+    }
+
+    if (rowIndex === -1 && ingameId) {
+      for (let i = 1; i < discordMapRows.length; i++) {
+        const rowIngameId = discordMapRows[i][ingameIdCol];
+        if (rowIngameId && String(rowIngameId).trim().toLowerCase() === String(ingameId).trim().toLowerCase()) {
+          rowIndex = i + 1;
+          console.log(`✅ Found player by Ingame-ID at row ${rowIndex} in DiscordMap`);
+          break;
+        }
       }
     }
 
     if (rowIndex === -1) {
-      throw new Error(`Player not found: Discord ID "${discordId}" not found in DiscordMap sheet`);
+      throw new Error(`Player not found: Discord ID "${discordId || ''}" and Ingame-ID "${ingameId || ''}" not found in DiscordMap sheet`);
     }
 
     // Get current value before clearing (Column C is index 2)
