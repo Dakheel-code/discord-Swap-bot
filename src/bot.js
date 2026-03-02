@@ -1189,15 +1189,32 @@ export class DiscordBot {
   }
 
   /**
+   * Fetch players from Master_CSV (live). If empty, fallback to Master_Final.
+   * Used by Move/Hold/Include to always get valid player data.
+   */
+  async fetchPlayersLive() {
+    const csvRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
+    const players = await fetchPlayersDataWithDiscordNames({ range: csvRange });
+    if (players && players.length > 0) {
+      console.log(`📋 fetchPlayersLive: loaded ${players.length} players from Master_CSV`);
+      return players;
+    }
+    console.warn(`⚠️ fetchPlayersLive: Master_CSV is empty, falling back to Master_Final`);
+    const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+    const fallback = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+    console.log(`📋 fetchPlayersLive: loaded ${fallback.length} players from Master_Final (fallback)`);
+    return fallback;
+  }
+
+  /**
    * Handle Move Player button - shows player selection dropdowns
    */
   async handleMovePlayerButton(interaction) {
     await interaction.deferReply({ ephemeral: true });
     
-    // Get all players — always from Master_CSV (live source)
+    // Get all players — Master_CSV first, fallback to Master_Final if empty
     if (!this.playersData || this.playersData.length === 0) {
-      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
-      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+      this.playersData = await this.fetchPlayersLive();
     }
     
     if (this.playersData.length === 0) {
@@ -1422,10 +1439,9 @@ export class DiscordBot {
         }
       }
       
-      // Refresh and redistribute once after all changes (Master_CSV = live source)
+      // Refresh and redistribute — Master_CSV first, fallback to Master_Final if empty
       console.log(`🔄 Refreshing player data...`);
-      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
-      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+      this.playersData = await this.fetchPlayersLive();
       const sortCol1 = this.distributionManager.sortColumn || 'Trophies';
       const seasonNum1 = this.distributionManager.customSeasonNumber || null;
       this.distributionManager.distribute(this.playersData, sortCol1, seasonNum1);
@@ -1504,9 +1520,8 @@ export class DiscordBot {
         }
       }
       
-      // Refresh and redistribute once after all changes (Master_CSV = live source)
-      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
-      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+      // Refresh and redistribute — Master_CSV first, fallback to Master_Final if empty
+      this.playersData = await this.fetchPlayersLive();
       const sortCol2 = this.distributionManager.sortColumn || 'Trophies';
       const seasonNum2 = this.distributionManager.customSeasonNumber || null;
       this.distributionManager.distribute(this.playersData, sortCol2, seasonNum2);
@@ -2659,9 +2674,8 @@ export class DiscordBot {
         discriminator: discordUser.discriminator
       });
       
-      // Refresh data first to get latest info (Master_CSV = live source)
-      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
-      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+      // Refresh data — Master_CSV first, fallback to Master_Final if empty
+      this.playersData = await this.fetchPlayersLive();
       
       // Find player's current clan from playersData
       let playerCurrentClan = null;
@@ -2756,9 +2770,8 @@ export class DiscordBot {
       // Write "Hold" directly to Google Sheet Action column
       await writePlayerAction(discordId, 'Hold');
       
-      // Refresh distribution and update messages (Master_CSV = live source)
-      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
-      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+      // Refresh distribution — Master_CSV first, fallback to Master_Final if empty
+      this.playersData = await this.fetchPlayersLive();
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       const seasonNum = this.distributionManager.customSeasonNumber || null;
       this.distributionManager.distribute(this.playersData, sortColumn, seasonNum);
@@ -2822,9 +2835,8 @@ export class DiscordBot {
         description += `\n\n_Cleared previous action: "${result.previousValue}"_`;
       }
 
-      // Refresh distribution and update messages (Master_CSV = live source)
-      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
-      this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+      // Refresh distribution — Master_CSV first, fallback to Master_Final if empty
+      this.playersData = await this.fetchPlayersLive();
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       const seasonNum = this.distributionManager.customSeasonNumber || null;
       this.distributionManager.distribute(this.playersData, sortColumn, seasonNum);
