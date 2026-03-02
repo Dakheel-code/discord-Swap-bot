@@ -15,6 +15,8 @@ export const config = {
     masterSyncEnabled: String(process.env.MASTER_SYNC_ENABLED || '').toLowerCase() === 'true',
     masterCsvSheetName: process.env.MASTER_CSV_SHEET_NAME || 'Master_CSV',
     masterFinalSheetName: process.env.MASTER_FINAL_SHEET_NAME || 'Master_Final',
+    // Primary source for player data (clan, trophies) — Master_CSV is always up-to-date
+    playersSourceSheetName: process.env.PLAYERS_SOURCE_SHEET_NAME || 'Master_CSV',
   },
   groups: {
     names: ['RGR', 'OTL', 'RND'],
