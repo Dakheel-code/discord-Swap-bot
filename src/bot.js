@@ -681,45 +681,44 @@ export class DiscordBot {
         await this.sendLongMessage(channel, formattedText, true, true);
         console.log(`✅ Scheduled post sent to ${channel.name}`);
         
-        // Send notification about the scheduled post to the channel where scheduling was initiated
-        const creationChannelId = this.scheduledData.creationChannelId || this.scheduledData.channelId;
-        
-        // Prepare notification channels list
-        const notificationChannelIds = [creationChannelId];
-        
-        // Prepare notification embed
-        const rgrCount = this.distributionManager.groups.RGR?.length || 0;
-        const otlCount = this.distributionManager.groups.OTL?.length || 0;
-        const rndCount = this.distributionManager.groups.RND?.length || 0;
-        const wildcardsCount = this.distributionManager.groups.WILDCARDS?.length || 0;
-        const totalPlayers = this.playersData.length;
-        
-        const notificationEmbed = new EmbedBuilder()
-          .setColor(0x00ff00)
-          .setTitle('✅ Scheduled Distribution Sent')
-          .setDescription(`The scheduled swap distribution has been posted successfully in ${channel}!`)
-          .addFields(
-            { name: '📊 Total Players', value: `${totalPlayers}`, inline: true },
-            { name: '🔴 RGR', value: `${rgrCount} players`, inline: true },
-            { name: '🟡 OTL', value: `${otlCount} players`, inline: true },
-            { name: '🟢 RND', value: `${rndCount} players`, inline: true },
-            { name: '⭐ WILDCARDS', value: `${wildcardsCount} players`, inline: true },
-            { name: '📅 Sent At', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
-          )
-          .setFooter({ text: this.autoSendMode ? 'Auto-Send Mode: Monitoring continues' : 'Scheduled post completed' })
-          .setTimestamp();
-        
-        // Send notification to all channels
-        for (const channelId of notificationChannelIds) {
+        // Send confirmation notification ONLY if the creation channel differs from the distribution channel
+        // (avoids cluttering the distribution channel with a confirmation message)
+        const creationChannelId = this.scheduledData.creationChannelId;
+        const distributionChannelId = this.scheduledData.channelId;
+
+        if (creationChannelId && creationChannelId !== distributionChannelId) {
           try {
-            const notifChannel = await this.client.channels.fetch(channelId).catch(() => null);
+            const rgrCount = this.distributionManager.groups.RGR?.length || 0;
+            const otlCount = this.distributionManager.groups.OTL?.length || 0;
+            const rndCount = this.distributionManager.groups.RND?.length || 0;
+            const wildcardsCount = this.distributionManager.groups.WILDCARDS?.length || 0;
+            const totalPlayers = this.playersData.length;
+
+            const notificationEmbed = new EmbedBuilder()
+              .setColor(0x00ff00)
+              .setTitle('✅ Scheduled Distribution Sent')
+              .setDescription(`The scheduled swap distribution has been posted successfully in ${channel}!`)
+              .addFields(
+                { name: '📊 Total Players', value: `${totalPlayers}`, inline: true },
+                { name: '🔴 RGR', value: `${rgrCount} players`, inline: true },
+                { name: '🟡 OTL', value: `${otlCount} players`, inline: true },
+                { name: '🟢 RND', value: `${rndCount} players`, inline: true },
+                { name: '⭐ WILDCARDS', value: `${wildcardsCount} players`, inline: true },
+                { name: '📅 Sent At', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+              )
+              .setFooter({ text: 'Scheduled post completed' })
+              .setTimestamp();
+
+            const notifChannel = await this.client.channels.fetch(creationChannelId).catch(() => null);
             if (notifChannel) {
               await notifChannel.send({ embeds: [notificationEmbed] });
-              console.log(`📢 Notification sent to channel: ${notifChannel.name} (${channelId})`);
+              console.log(`📢 Notification sent to creation channel: ${notifChannel.name}`);
             }
           } catch (error) {
-            console.error(`❌ Failed to send notification to channel ${channelId}:`, error);
+            console.error(`❌ Failed to send notification:`, error);
           }
+        } else {
+          console.log(`📢 Notification skipped: creation channel same as distribution channel`);
         }
       } else {
         console.error('❌ No distribution data to send');
