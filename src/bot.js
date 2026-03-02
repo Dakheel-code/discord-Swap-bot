@@ -643,17 +643,9 @@ export class DiscordBot {
         return;
       }
 
-      // Sync Master_CSV → Master_Final before posting (for both auto-send and regular schedule)
-      console.log('🔁 Syncing Master_CSV → Master_Final before scheduled post...');
-      const syncResult = await this.checkAndExecuteMasterSync(true);
-      if (syncResult && syncResult.aborted) {
-        console.warn(`⚠️ Sync skipped: ${syncResult.abortReason || 'Source empty'}`);
-        await channel.send(`⚠️ Warning: Could not sync Master_CSV to Master_Final. ${syncResult.abortReason || 'Source appears empty'}`);
-      } else if (syncResult && syncResult.copiedRows > 0) {
-        console.log(`✅ Synced ${syncResult.copiedRows} row(s) to Master_Final`);
-      }
-
-      console.log('🔄 Refreshing data from Google Sheets (Master_CSV) before scheduled post...');
+      // Read directly from Master_Final (snapshot was already copied at schedule creation time)
+      // Do NOT sync Master_CSV → Master_Final here, Master_CSV may be empty at execution time
+      console.log('🔄 Reading player data from Master_Final (snapshot from schedule creation)...');
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       
