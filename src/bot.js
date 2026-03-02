@@ -193,7 +193,7 @@ export class DiscordBot {
 
     try {
       console.log('🔄 ensureDistributionLoaded: Restoring distribution from Google Sheets...');
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = data.sortColumn || this.distributionManager.sortColumn || 'Trophies';
       const seasonNumber = data.seasonNumber || this.distributionManager.customSeasonNumber || null;
@@ -409,7 +409,7 @@ export class DiscordBot {
 
       if (shouldRestoreState) {
         console.log('🔄 Reloading distribution data from Google Sheets...');
-        const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+        const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
         this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
         const sortColumn = data.sortColumn || 'Trophies';
@@ -654,7 +654,7 @@ export class DiscordBot {
       }
 
       console.log('🔄 Refreshing data from Google Sheets (Master_CSV) before scheduled post...');
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       
       console.log(`📊 Players data loaded: ${this.playersData.length} players`);
@@ -1202,9 +1202,9 @@ export class DiscordBot {
   async handleMovePlayerButton(interaction) {
     await interaction.deferReply({ ephemeral: true });
     
-    // Get all players
+    // Get all players — always from Master_CSV (live source)
     if (!this.playersData || this.playersData.length === 0) {
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
     }
     
@@ -1430,9 +1430,9 @@ export class DiscordBot {
         }
       }
       
-      // Refresh and redistribute once after all changes
+      // Refresh and redistribute once after all changes (Master_CSV = live source)
       console.log(`🔄 Refreshing player data...`);
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortCol1 = this.distributionManager.sortColumn || 'Trophies';
       const seasonNum1 = this.distributionManager.customSeasonNumber || null;
@@ -1512,8 +1512,8 @@ export class DiscordBot {
         }
       }
       
-      // Refresh and redistribute once after all changes
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      // Refresh and redistribute once after all changes (Master_CSV = live source)
+      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortCol2 = this.distributionManager.sortColumn || 'Trophies';
       const seasonNum2 = this.distributionManager.customSeasonNumber || null;
@@ -1983,7 +1983,7 @@ export class DiscordBot {
         
         // Auto-run swap if no data exists
         if (!this.distributionManager.allPlayers || this.distributionManager.allPlayers.length === 0) {
-          const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+          const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
           this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
           if (this.playersData && this.playersData.length > 0) {
             const sortCol3 = this.distributionManager.sortColumn || 'Trophies';
@@ -2030,7 +2030,7 @@ export class DiscordBot {
           }
 
           // Create initial snapshot NOW (at schedule creation time)
-          const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+          const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
           this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
           this.dataSnapshot = this.createDataSnapshot(this.playersData);
           console.log('📸 Created data snapshot at schedule creation time');
@@ -2532,7 +2532,7 @@ export class DiscordBot {
     const seasonNumber = interaction.options.getString('season'); // Get season number from options
 
     // Fetch fresh data with Discord names
-    const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+    const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
     this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
     if (this.playersData.length === 0) {
@@ -2667,8 +2667,8 @@ export class DiscordBot {
         discriminator: discordUser.discriminator
       });
       
-      // Refresh data first to get latest info
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      // Refresh data first to get latest info (Master_CSV = live source)
+      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       
       // Find player's current clan from playersData
@@ -2764,8 +2764,8 @@ export class DiscordBot {
       // Write "Hold" directly to Google Sheet Action column
       await writePlayerAction(discordId, 'Hold');
       
-      // Refresh distribution and update messages
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      // Refresh distribution and update messages (Master_CSV = live source)
+      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       const seasonNum = this.distributionManager.customSeasonNumber || null;
@@ -2830,8 +2830,8 @@ export class DiscordBot {
         description += `\n\n_Cleared previous action: "${result.previousValue}"_`;
       }
 
-      // Refresh distribution and update messages
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      // Refresh distribution and update messages (Master_CSV = live source)
+      const finalRange = `${config.googleSheets.masterCsvSheetName || 'Master_CSV'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
       const seasonNum = this.distributionManager.customSeasonNumber || null;
@@ -2927,7 +2927,7 @@ export class DiscordBot {
         const currentSortColumn = this.distributionManager.sortColumn;
 
         // Refresh data from Google Sheets
-        const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+        const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
         this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
         // Create new distribution manager
@@ -2965,7 +2965,7 @@ export class DiscordBot {
         const currentSortColumn = this.distributionManager.sortColumn;
 
         // Refresh data from Google Sheets (keeps actions)
-        const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+        const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
         this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
         // Create new distribution manager
@@ -3168,7 +3168,7 @@ export class DiscordBot {
       }
 
       console.log('🔄 Refreshing data from Google Sheets (Master_CSV) after schedule creation...');
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
       console.log(`⏰ Schedule set: Will post in ${minutesUntil} minutes (${datetime} UTC)`);
@@ -3518,7 +3518,7 @@ export class DiscordBot {
         // Try to refresh data and re-distribute
         if (this.lastDistributionMessages && this.lastDistributionMessages.length > 0) {
           console.log('🔄 No distribution in memory, refreshing from Google Sheets...');
-          const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+          const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
           this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
           const sortColumn = this.distributionManager.sortColumn || 'Trophies';
           const seasonNum = this.distributionManager.customSeasonNumber || null;
@@ -3695,7 +3695,7 @@ export class DiscordBot {
 
       // Fetch fresh data from Google Sheets
       console.log('🔄 Refreshing data from Google Sheets (Master_CSV)...');
-      const finalRange = `${config.googleSheets.playersSourceSheetName || 'Master_CSV'}!A:Z`;
+      const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
       if (this.playersData.length === 0) {
