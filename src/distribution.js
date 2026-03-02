@@ -57,15 +57,11 @@ export class DistributionManager {
     
     sortedPlayers.forEach(player => {
       const action = player.Action ? player.Action.trim() : '';
-      const currentClan = this.getPlayerClan(player);
       
-      if (action === 'Hold') {
-        // Hold occupies a slot in the player's current clan
-        if (reservedPerClan[currentClan] !== undefined) {
-          reservedPerClan[currentClan]++;
-        }
-      } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
+      if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
         // Manual move occupies a slot in the TARGET clan
+        // Hold players stay in their current clan and do NOT reduce available slots
+        // for incoming players (they are not part of the 50 incoming cap)
         reservedPerClan[action]++;
       }
     });
