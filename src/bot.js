@@ -681,12 +681,9 @@ export class DiscordBot {
         await this.sendLongMessage(channel, formattedText, true, true);
         console.log(`✅ Scheduled post sent to ${channel.name}`);
         
-        // Send confirmation notification ONLY if the creation channel differs from the distribution channel
-        // (avoids cluttering the distribution channel with a confirmation message)
-        const creationChannelId = this.scheduledData.creationChannelId;
-        const distributionChannelId = this.scheduledData.channelId;
-
-        if (creationChannelId && creationChannelId !== distributionChannelId) {
+        // Send confirmation via DM to the user who created the schedule
+        const creatorUserId = this.scheduledData.creatorUserId;
+        if (creatorUserId) {
           try {
             const rgrCount = this.distributionManager.groups.RGR?.length || 0;
             const otlCount = this.distributionManager.groups.OTL?.length || 0;
@@ -709,16 +706,16 @@ export class DiscordBot {
               .setFooter({ text: 'Scheduled post completed' })
               .setTimestamp();
 
-            const notifChannel = await this.client.channels.fetch(creationChannelId).catch(() => null);
-            if (notifChannel) {
-              await notifChannel.send({ embeds: [notificationEmbed] });
-              console.log(`📢 Notification sent to creation channel: ${notifChannel.name}`);
+            const creator = await this.client.users.fetch(creatorUserId).catch(() => null);
+            if (creator) {
+              await creator.send({ embeds: [notificationEmbed] });
+              console.log(`📢 DM confirmation sent to creator: ${creator.username}`);
             }
           } catch (error) {
-            console.error(`❌ Failed to send notification:`, error);
+            console.error(`❌ Failed to send DM notification:`, error);
           }
         } else {
-          console.log(`📢 Notification skipped: creation channel same as distribution channel`);
+          console.log(`📢 No creator user ID saved — skipping DM notification`);
         }
       } else {
         console.error('❌ No distribution data to send');
@@ -2045,6 +2042,7 @@ export class DiscordBot {
           this.scheduledData = {
             channelId: channelId,
             creationChannelId: interaction.channel.id,
+            creatorUserId: interaction.user.id,
             datetime: datetime,
             timestamp: scheduledDate.getTime(),
             autoSend: true,
@@ -3159,6 +3157,7 @@ export class DiscordBot {
         datetime: datetime,
         channelId: channelId,
         creationChannelId: interaction.channel.id,
+        creatorUserId: interaction.user.id,
         timestamp: scheduledDate.getTime()
       };
       this.saveSchedule();
