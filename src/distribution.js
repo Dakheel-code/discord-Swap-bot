@@ -512,15 +512,7 @@ export class DistributionManager {
     for (const groupName of config.groups.names) {
       const players = this.groups[groupName];
       
-      // Count manual moves targeting this clan (they are in WILDCARDS but count toward the 50)
-      const manualMovesCount = this.groups.WILDCARDS
-        ? this.groups.WILDCARDS.filter(p => {
-            const info = this.wildcardInfo.get(this.getPlayerIdentifier(p));
-            return info && info.type === 'manual' && info.target === groupName;
-          }).length
-        : 0;
-      
-      const playerCount = players.length + manualMovesCount;
+      const playerCount = players.length;
       
       let clanOutput = '';
       
