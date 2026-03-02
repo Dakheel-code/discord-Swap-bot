@@ -51,24 +51,31 @@ export class DistributionManager {
       return valueB - valueA; // Descending order
     });
     
-    // Count Hold players per clan first
-    const holdCountPerClan = { RGR: 0, OTL: 0, RND: 0 };
+    // Count Hold players AND manual move players per target clan first
+    // Both types occupy a slot and must be counted before auto-distribution
+    const reservedPerClan = { RGR: 0, OTL: 0, RND: 0 };
     
     sortedPlayers.forEach(player => {
       const action = player.Action ? player.Action.trim() : '';
       const currentClan = this.getPlayerClan(player);
       
-      if (action === 'Hold' && holdCountPerClan[currentClan] !== undefined) {
-        holdCountPerClan[currentClan]++;
+      if (action === 'Hold') {
+        // Hold occupies a slot in the player's current clan
+        if (reservedPerClan[currentClan] !== undefined) {
+          reservedPerClan[currentClan]++;
+        }
+      } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
+        // Manual move occupies a slot in the TARGET clan
+        reservedPerClan[action]++;
       }
     });
     
-    console.log(`📊 Hold count per clan:`, holdCountPerClan);
+    console.log(`📊 Reserved slots per clan (Hold + Manual):`, reservedPerClan);
     
-    // Initialize counters with Hold count
-    let rgrCount = holdCountPerClan.RGR;
-    let otlCount = holdCountPerClan.OTL;
-    let rndCount = holdCountPerClan.RND;
+    // Initialize counters with reserved count so auto-fill respects the 50-cap
+    let rgrCount = reservedPerClan.RGR;
+    let otlCount = reservedPerClan.OTL;
+    let rndCount = reservedPerClan.RND;
     
     // Process all players
     const playersWithAction = [];
@@ -88,7 +95,7 @@ export class DistributionManager {
         this.excludedPlayers.add(identifier);
         
       } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
-        // Manual move - add to WILDCARDS
+        // Manual move - add to WILDCARDS (slot already reserved above)
         playersWithAction.push(player);
         
         if (currentClan === action) {
@@ -104,7 +111,7 @@ export class DistributionManager {
         }
         
       } else {
-        // Automatic distribution
+        // Automatic distribution - respects 50-cap including reserved slots
         let targetClan = null;
         
         if (rgrCount < 50) {

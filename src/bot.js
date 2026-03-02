@@ -139,8 +139,8 @@ export class DiscordBot {
   splitDistributionToChunks(text, maxLength = 2000) {
     const safeText = this.sanitizeMessageContent(text);
 
-    const otlIndex = safeText.indexOf('**## to OTL');
-    const rndIndex = safeText.indexOf('**## to RND');
+    const otlIndex = safeText.indexOf('**to OTL');
+    const rndIndex = safeText.indexOf('**to RND');
 
     if (otlIndex === -1 || rndIndex === -1) {
       return this.splitTextByLinesToChunks(safeText, maxLength);
@@ -1314,11 +1314,14 @@ export class DiscordBot {
       console.log(`   Discord-ID from value: "${discordIdFromValue}"`);
       console.log(`   Final Discord-ID: "${discordId}"`);
       
+      const currentClan = String(player.Clan || player.clan || '').trim().toUpperCase();
+
       selectedPlayers.push({
         index: playerIndex,
         discordId: discordId,
         ingameId: ingameId || null,
-        name: playerName
+        name: playerName,
+        currentClan: currentClan
       });
     }
     
@@ -1400,14 +1403,13 @@ export class DiscordBot {
           continue;
         }
         
-        // Get player's current clan
-        const player = this.playersData[playerIndex];
-        const currentClan = player?.Clan || player?.clan || '';
+        // Use currentClan saved at selection time (avoids stale playersData index)
+        const currentClan = playerData.currentClan || '';
         
         // If moving to same clan, use HOLD instead
         let actionToWrite = targetClan;
         
-        if (currentClan.toUpperCase() === targetClan.toUpperCase()) {
+        if (currentClan && currentClan === targetClan.toUpperCase()) {
           actionToWrite = 'Hold';
           console.log(`📌 Player "${playerName}" is already in ${currentClan}, setting to HOLD`);
         }
@@ -1432,8 +1434,10 @@ export class DiscordBot {
       console.log(`🔄 Refreshing player data...`);
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
-      this.distributionManager.distribute(this.playersData);
-      console.log(`✅ Data refreshed and redistributed`);
+      const sortCol1 = this.distributionManager.sortColumn || 'Trophies';
+      const seasonNum1 = this.distributionManager.customSeasonNumber || null;
+      this.distributionManager.distribute(this.playersData, sortCol1, seasonNum1);
+      console.log(`✅ Data refreshed and redistributed (sort: ${sortCol1}, season: ${seasonNum1 || 'N/A'})`);
       
       // Update messages if they exist
       if (this.lastDistributionMessages && this.lastDistributionMessages.length > 0) {
@@ -1511,7 +1515,9 @@ export class DiscordBot {
       // Refresh and redistribute once after all changes
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
-      this.distributionManager.distribute(this.playersData);
+      const sortCol2 = this.distributionManager.sortColumn || 'Trophies';
+      const seasonNum2 = this.distributionManager.customSeasonNumber || null;
+      this.distributionManager.distribute(this.playersData, sortCol2, seasonNum2);
       
       // Update messages if they exist
       if (this.lastDistributionMessages && this.lastDistributionMessages.length > 0) {
@@ -1980,7 +1986,9 @@ export class DiscordBot {
           const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
           this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
           if (this.playersData && this.playersData.length > 0) {
-            this.distributionManager.distribute(this.playersData);
+            const sortCol3 = this.distributionManager.sortColumn || 'Trophies';
+            const seasonNum3 = this.distributionManager.customSeasonNumber || null;
+            this.distributionManager.distribute(this.playersData, sortCol3, seasonNum3);
             console.log('📊 Auto-distributed players for schedule');
           }
         }
@@ -2701,7 +2709,8 @@ export class DiscordBot {
       // Refresh distribution and update messages
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-      this.distributionManager.distribute(this.playersData, sortColumn);
+      const seasonNum = this.distributionManager.customSeasonNumber || null;
+      this.distributionManager.distribute(this.playersData, sortColumn, seasonNum);
       
       // Update distribution messages
       const formattedText = this.distributionManager.getFormattedDistribution();
@@ -2759,7 +2768,8 @@ export class DiscordBot {
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-      this.distributionManager.distribute(this.playersData, sortColumn);
+      const seasonNum = this.distributionManager.customSeasonNumber || null;
+      this.distributionManager.distribute(this.playersData, sortColumn, seasonNum);
       
       // Update distribution messages
       const formattedText = this.distributionManager.getFormattedDistribution();
@@ -2824,7 +2834,8 @@ export class DiscordBot {
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-      this.distributionManager.distribute(this.playersData, sortColumn);
+      const seasonNum = this.distributionManager.customSeasonNumber || null;
+      this.distributionManager.distribute(this.playersData, sortColumn, seasonNum);
       
       // Update distribution messages
       const formattedText = this.distributionManager.getFormattedDistribution();
@@ -2897,9 +2908,6 @@ export class DiscordBot {
   }
 
   /**
-   * Handle /refresh command
-   */
-  /**
    * Handle /reset command
    */
   async handleReset(interaction) {
@@ -2927,7 +2935,7 @@ export class DiscordBot {
 
         // Re-distribute if there was a previous distribution
         if (this.playersData.length > 0 && currentSortColumn) {
-          this.distributionManager.distribute(this.playersData, currentSortColumn);
+          this.distributionManager.distribute(this.playersData, currentSortColumn, null);
         }
 
         // Clear saved messages
@@ -2965,7 +2973,7 @@ export class DiscordBot {
 
         // Re-distribute if there was a previous distribution
         if (this.playersData.length > 0 && currentSortColumn) {
-          this.distributionManager.distribute(this.playersData, currentSortColumn);
+          this.distributionManager.distribute(this.playersData, currentSortColumn, null);
         }
 
         // Clear saved messages
@@ -3513,7 +3521,8 @@ export class DiscordBot {
           const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
           this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
           const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-          this.distributionManager.distribute(this.playersData, sortColumn);
+          const seasonNum = this.distributionManager.customSeasonNumber || null;
+          this.distributionManager.distribute(this.playersData, sortColumn, seasonNum);
           console.log(`✅ Distribution refreshed: ${this.playersData.length} players`);
         } else {
           const embed = new EmbedBuilder()
@@ -3850,28 +3859,25 @@ export class DiscordBot {
   splitIntoThreeMessages(text) {
     const messages = [];
     
-    // Find section markers
-    const rgrStart = text.indexOf('**# ');
-    const otlStart = text.indexOf('**## to OTL');
-    const rndStart = text.indexOf('**## to RND');
-    const wildcardsStart = text.indexOf('**# WILDCARDS');
-    const footerStart = text.indexOf('---\n\nDone:');
+    // Find section markers matching getFormattedDistribution() output
+    const otlStart = text.indexOf('**to OTL');
+    const rndStart = text.indexOf('**to RND');
     
-    if (rgrStart === -1 || otlStart === -1 || rndStart === -1) {
+    if (otlStart === -1 || rndStart === -1) {
       console.warn('⚠️ Could not find section markers, using fallback split');
       return this.splitDistributionToChunks(text, 2000);
     }
     
     // Message 1: Title + RGR
-    let message1 = text.slice(rgrStart, otlStart).trim();
+    const message1 = text.slice(0, otlStart).trim();
     messages.push(message1);
     
     // Message 2: OTL only
-    let message2 = text.slice(otlStart, rndStart).trim();
+    const message2 = text.slice(otlStart, rndStart).trim();
     messages.push(message2);
     
     // Message 3: RND + WILDCARDS + Footer
-    let message3 = text.slice(rndStart).trim();
+    const message3 = text.slice(rndStart).trim();
     messages.push(message3);
     
     return messages;

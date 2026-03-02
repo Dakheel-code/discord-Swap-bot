@@ -142,5 +142,6 @@ vite.config.ts.timestamp-*
 credentials.json
 distribution_messages.json
 schedule.json
+restore_botstate.json
 .DS_Store
 .pm2/

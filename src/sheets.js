@@ -304,6 +304,21 @@ export async function syncMasterCsvToFinal(options = {}) {
     return { copiedRows: 0, lastCopiedRow: options.lastCopiedRow || 1 };
   }
 
+  // Check if Master_Final has an Action column that should NOT be overwritten
+  // (it may contain VLOOKUP formulas pointing to DiscordMap)
+  const targetHeaderRes = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: config.googleSheets.sheetId,
+    range: `${targetSheetName}!1:1`,
+  });
+  const targetHeaderRow = (targetHeaderRes.data.values && targetHeaderRes.data.values[0]) ? targetHeaderRes.data.values[0] : [];
+  const actionColIndexInTarget = targetHeaderRow.findIndex(h => h.trim().toLowerCase() === 'action');
+  // Safe column count to copy: stop before the Action column in target (if it exists beyond source columns)
+  const safeCopyColumnCount = (actionColIndexInTarget !== -1 && actionColIndexInTarget < columnCount)
+    ? actionColIndexInTarget   // exclude Action column and everything after it
+    : columnCount;             // Action is beyond source columns or not found — copy all source columns
+
+  console.log(`📋 Sync: source columns=${columnCount}, target Action col=${actionColIndexInTarget}, safe copy cols=${safeCopyColumnCount}`);
+
   const endCol = columnIndexToLetter(Math.max(0, columnCount - 1));
   const sourceDataRange = `${sourceSheetName}!A1:${endCol}`;
   const sourceDataRes = await sheetsClient.spreadsheets.values.get({
@@ -388,47 +403,50 @@ export async function syncMasterCsvToFinal(options = {}) {
     });
   }
 
-  requests.push({
-    copyPaste: {
-      source: {
-        sheetId: sourceProps.sheetId,
-        startRowIndex: startRow - 1,
-        endRowIndex: lastSourceRow,
-        startColumnIndex: 0,
-        endColumnIndex: columnCount,
+  // Only copy up to safeCopyColumnCount to avoid overwriting Action column formulas in Master_Final
+  if (safeCopyColumnCount > 0) {
+    requests.push({
+      copyPaste: {
+        source: {
+          sheetId: sourceProps.sheetId,
+          startRowIndex: startRow - 1,
+          endRowIndex: lastSourceRow,
+          startColumnIndex: 0,
+          endColumnIndex: safeCopyColumnCount,
+        },
+        destination: {
+          sheetId: targetProps.sheetId,
+          startRowIndex: startRow - 1,
+          endRowIndex: lastSourceRow,
+          startColumnIndex: 0,
+          endColumnIndex: safeCopyColumnCount,
+        },
+        pasteType: 'PASTE_FORMAT',
+        pasteOrientation: 'NORMAL',
       },
-      destination: {
-        sheetId: targetProps.sheetId,
-        startRowIndex: startRow - 1,
-        endRowIndex: lastSourceRow,
-        startColumnIndex: 0,
-        endColumnIndex: columnCount,
-      },
-      pasteType: 'PASTE_FORMAT',
-      pasteOrientation: 'NORMAL',
-    },
-  });
+    });
 
-  requests.push({
-    copyPaste: {
-      source: {
-        sheetId: sourceProps.sheetId,
-        startRowIndex: startRow - 1,
-        endRowIndex: lastSourceRow,
-        startColumnIndex: 0,
-        endColumnIndex: columnCount,
+    requests.push({
+      copyPaste: {
+        source: {
+          sheetId: sourceProps.sheetId,
+          startRowIndex: startRow - 1,
+          endRowIndex: lastSourceRow,
+          startColumnIndex: 0,
+          endColumnIndex: safeCopyColumnCount,
+        },
+        destination: {
+          sheetId: targetProps.sheetId,
+          startRowIndex: startRow - 1,
+          endRowIndex: lastSourceRow,
+          startColumnIndex: 0,
+          endColumnIndex: safeCopyColumnCount,
+        },
+        pasteType: 'PASTE_VALUES',
+        pasteOrientation: 'NORMAL',
       },
-      destination: {
-        sheetId: targetProps.sheetId,
-        startRowIndex: startRow - 1,
-        endRowIndex: lastSourceRow,
-        startColumnIndex: 0,
-        endColumnIndex: columnCount,
-      },
-      pasteType: 'PASTE_VALUES',
-      pasteOrientation: 'NORMAL',
-    },
-  });
+    });
+  }
 
   await sheetsClientWithAuth.spreadsheets.batchUpdate({
     spreadsheetId: config.googleSheets.sheetId,
@@ -638,7 +656,14 @@ export async function fetchPlayersDataWithDiscordNames(options = {}) {
         const mappingData = discordMapping.get(String(ingameId).trim());
         let discordId = mappingData.discordId;
         let discordName = '';
-        const action = mappingData.action;
+        // Fallback: if DiscordMap Action is empty, use Action column from Master_Final row directly
+        const actionFromDiscordMap = mappingData.action ? String(mappingData.action).trim() : '';
+        const actionFromSheet = player['Action'] ? String(player['Action']).trim() : '';
+        const action = actionFromDiscordMap || actionFromSheet;
+
+        if (action && !actionFromDiscordMap && actionFromSheet) {
+          console.log(`📋 Action fallback for "${ingameId}": using Master_Final Action="${actionFromSheet}" (DiscordMap was empty)`);
+        }
         
         if (discordId && /^\d{17,20}$/.test(String(discordId).trim())) {
           discordId = String(discordId).trim();
@@ -657,7 +682,7 @@ export async function fetchPlayersDataWithDiscordNames(options = {}) {
         
         player.DiscordName = discordName; // This will be the mention for messages
         player['Discord-ID'] = discordId; // Add Discord ID as a separate field
-        player.Action = action; // Add Action from DiscordMap
+        player.Action = action; // Action from DiscordMap, with fallback to Master_Final
         player.OriginalName = player.Name || player.Player || player.USERNAME;
         // Keep DisplayName as original name (not mention) for dropdowns/lists
         player.DisplayName = player.OriginalName;
@@ -667,8 +692,10 @@ export async function fetchPlayersDataWithDiscordNames(options = {}) {
           console.log(`📋 Player ${index + 1}: IngameId="${ingameId}", DiscordName="${discordName}", Discord-ID="${discordId || 'N/A'}", Action="${action}"`);
         }
       } else {
-        // Keep original name if no mapping found
-        player.DisplayName = player.Name || player.Player || player.USERNAME || 'Unknown';
+        // No DiscordMap entry - still apply Action from Master_Final sheet directly
+        player.OriginalName = player.Name || player.Player || player.USERNAME;
+        player.DisplayName = player.OriginalName;
+        // Action column from Master_Final is already on the player object as-is
       }
     });
 
@@ -818,21 +845,70 @@ async function getIngameId(playerName) {
 }
 
 /**
+ * Write action to Master_CSV sheet column E (Action) by Ingame-ID
+ * @param {string} ingameId - Player's Ingame-ID
+ * @param {string} action - Action to write (clan name, 'Hold', or '')
+ * @returns {Promise<boolean>} true if written, false if player not found
+ */
+async function writeActionToMasterCsv(ingameId, action) {
+  if (!sheetsClientWithAuth || !ingameId) return false;
+
+  try {
+    const csvSheet = config.googleSheets.masterCsvSheetName || 'Master_CSV';
+    const res = await sheetsClient.spreadsheets.values.get({
+      spreadsheetId: config.googleSheets.sheetId,
+      range: `${csvSheet}!A:E`,
+    });
+    const rows = res.data.values || [];
+    if (rows.length < 2) return false;
+
+    // Find Action column index from header
+    const headers = rows[0].map(h => String(h).trim().toLowerCase());
+    const ingameIdCol = headers.findIndex(h => h.includes('ingame') || h === 'id');
+    const actionCol = headers.findIndex(h => h === 'action');
+    if (ingameIdCol === -1 || actionCol === -1) {
+      console.warn(`⚠️ Master_CSV: ingame-id col=${ingameIdCol}, action col=${actionCol} — skipping`);
+      return false;
+    }
+
+    // Find player row
+    const ingameIdStr = String(ingameId).trim();
+    for (let i = 1; i < rows.length; i++) {
+      const rowIngameId = rows[i][ingameIdCol] ? String(rows[i][ingameIdCol]).trim() : '';
+      if (rowIngameId === ingameIdStr) {
+        const colLetter = columnIndexToLetter(actionCol);
+        const range = `${csvSheet}!${colLetter}${i + 1}`;
+        await sheetsClientWithAuth.spreadsheets.values.update({
+          spreadsheetId: config.googleSheets.sheetId,
+          range,
+          valueInputOption: 'RAW',
+          resource: { values: [[action]] },
+        });
+        console.log(`✅ Master_CSV Action updated: row ${i + 1}, Ingame-ID="${ingameIdStr}" → "${action}"`);
+        return true;
+      }
+    }
+
+    console.warn(`⚠️ Master_CSV: Ingame-ID "${ingameIdStr}" not found — skipping`);
+    return false;
+  } catch (err) {
+    console.warn(`⚠️ Master_CSV write failed (non-fatal): ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Write action to DiscordMap sheet column C (Action)
  * @param {string} discordId - Discord user ID (numeric string)
  * @param {string} action - Action to write (clan name or 'Hold')
  * @returns {Promise<boolean>} Success status
  */
-export async function writePlayerAction(discordId, action) {
+export async function writePlayerAction(discordId, action, ingameId = null) {
   if (!sheetsClientWithAuth) {
     throw new Error('Write access not available. Please configure Service Account credentials in .env file (GOOGLE_SERVICE_ACCOUNT_PATH)');
   }
 
   try {
-    let ingameId = null;
-    if (arguments.length >= 3) {
-      ingameId = arguments[2];
-    }
 
     console.log(
       `🔍 Searching for player in DiscordMap sheet (discordId="${discordId || ''}", ingameId="${ingameId || ''}")`
@@ -953,6 +1029,13 @@ export async function writePlayerAction(discordId, action) {
     });
 
     console.log(`✅ Updated Action for Discord ID "${discordId}" to "${action}" at ${range}`);
+
+    // Also write to Master_CSV — resolve ingameId from DiscordMap row if not passed
+    const resolvedIngameId = ingameId || (discordMapRows[rowIndex - 1] && discordMapRows[rowIndex - 1][ingameIdCol]
+      ? String(discordMapRows[rowIndex - 1][ingameIdCol]).trim()
+      : null);
+    await writeActionToMasterCsv(resolvedIngameId, action);
+
     return true;
   } catch (error) {
     console.error('❌ Error writing player action:', error.message);
@@ -965,16 +1048,12 @@ export async function writePlayerAction(discordId, action) {
  * @param {string} discordId - Discord user ID (numeric string)
  * @returns {Promise<{success: boolean, previousValue: string}>} Result with previous value
  */
-export async function clearPlayerAction(discordId) {
+export async function clearPlayerAction(discordId, ingameId = null) {
   if (!sheetsClientWithAuth) {
     throw new Error('Write access not available. Please configure Service Account credentials in .env file (GOOGLE_SERVICE_ACCOUNT_PATH)');
   }
 
   try {
-    let ingameId = null;
-    if (arguments.length >= 2) {
-      ingameId = arguments[1];
-    }
 
     console.log(
       `🔍 Clearing action in DiscordMap (discordId="${discordId || ''}", ingameId="${ingameId || ''}")`
@@ -1068,6 +1147,13 @@ export async function clearPlayerAction(discordId) {
     });
 
     console.log(`✅ Cleared Action for Discord ID ${discordId} at ${range}`);
+
+    // Also clear in Master_CSV
+    const resolvedIngameId = ingameId || (discordMapRows[rowIndex - 1] && discordMapRows[rowIndex - 1][0]
+      ? String(discordMapRows[rowIndex - 1][0]).trim()
+      : null);
+    await writeActionToMasterCsv(resolvedIngameId, '');
+
     return { success: true, previousValue: currentValue };
   } catch (error) {
     console.error('❌ Error clearing player action:', error.message);
