@@ -898,6 +898,54 @@ async function writeActionToMasterCsv(ingameId, action) {
 }
 
 /**
+ * Write action to Master_Final sheet Action column by Ingame-ID
+ */
+async function writeActionToMasterFinal(ingameId, action) {
+  if (!sheetsClientWithAuth || !ingameId) return false;
+
+  try {
+    const finalSheet = config.googleSheets.masterFinalSheetName || 'Master_Final';
+    const res = await sheetsClient.spreadsheets.values.get({
+      spreadsheetId: config.googleSheets.sheetId,
+      range: `${finalSheet}!A:Z`,
+    });
+    const rows = res.data.values || [];
+    if (rows.length < 2) return false;
+
+    const headers = rows[0].map(h => String(h).trim().toLowerCase());
+    const ingameIdCol = headers.findIndex(h => h.includes('ingame') || h === 'id');
+    const actionCol = headers.findIndex(h => h === 'action');
+    if (ingameIdCol === -1 || actionCol === -1) {
+      console.warn(`⚠️ Master_Final: ingame-id col=${ingameIdCol}, action col=${actionCol} — skipping`);
+      return false;
+    }
+
+    const ingameIdStr = String(ingameId).trim();
+    for (let i = 1; i < rows.length; i++) {
+      const rowIngameId = rows[i][ingameIdCol] ? String(rows[i][ingameIdCol]).trim() : '';
+      if (rowIngameId === ingameIdStr) {
+        const colLetter = columnIndexToLetter(actionCol);
+        const range = `${finalSheet}!${colLetter}${i + 1}`;
+        await sheetsClientWithAuth.spreadsheets.values.update({
+          spreadsheetId: config.googleSheets.sheetId,
+          range,
+          valueInputOption: 'RAW',
+          resource: { values: [[action]] },
+        });
+        console.log(`✅ Master_Final Action updated: row ${i + 1}, Ingame-ID="${ingameIdStr}" → "${action}"`);
+        return true;
+      }
+    }
+
+    console.warn(`⚠️ Master_Final: Ingame-ID "${ingameIdStr}" not found — skipping`);
+    return false;
+  } catch (err) {
+    console.warn(`⚠️ Master_Final write failed (non-fatal): ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Write action to DiscordMap sheet column C (Action)
  * @param {string} discordId - Discord user ID (numeric string)
  * @param {string} action - Action to write (clan name or 'Hold')
@@ -1035,6 +1083,7 @@ export async function writePlayerAction(discordId, action, ingameId = null) {
       ? String(discordMapRows[rowIndex - 1][ingameIdCol]).trim()
       : null);
     await writeActionToMasterCsv(resolvedIngameId, action);
+    await writeActionToMasterFinal(resolvedIngameId, action);
 
     return true;
   } catch (error) {
@@ -1148,11 +1197,15 @@ export async function clearPlayerAction(discordId, ingameId = null) {
 
     console.log(`✅ Cleared Action for Discord ID ${discordId} at ${range}`);
 
-    // Also clear in Master_CSV
     const resolvedIngameId = ingameId || (discordMapRows[rowIndex - 1] && discordMapRows[rowIndex - 1][0]
       ? String(discordMapRows[rowIndex - 1][0]).trim()
       : null);
+
+    // Clear in Master_CSV
     await writeActionToMasterCsv(resolvedIngameId, '');
+
+    // Clear in Master_Final
+    await writeActionToMasterFinal(resolvedIngameId, '');
 
     return { success: true, previousValue: currentValue };
   } catch (error) {
