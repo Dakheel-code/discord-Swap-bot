@@ -3618,85 +3618,35 @@ export class DiscordBot {
    */
   async handleRefresh(interaction) {
     try {
-      console.log('🔁 Master Sync: Copying Master_CSV -> Master_Final (manual refresh)...');
-      const syncResult = await this.checkAndExecuteMasterSync(true);
-
-      if (!syncResult && !config.googleSheets.masterSyncEnabled) {
-        console.warn('⚠️ Master Sync is disabled (MASTER_SYNC_ENABLED is not true).');
-      }
-
       // Check if there are distribution messages to refresh
       if (!this.lastDistributionMessages || this.lastDistributionMessages.length === 0) {
-        if (!syncResult) {
-          const embed = new EmbedBuilder()
-            .setColor(0xff0000)
-            .setTitle('❌ Refresh Failed')
-            .setDescription('Master sync did not run. Please check bot logs for details (Service Account write access is required).')
-            .setTimestamp();
-
-          await interaction.editReply({ embeds: [embed] });
-          return;
-        }
-
-        if (syncResult.aborted) {
-          const embed = new EmbedBuilder()
-            .setColor(0xff9900)
-            .setTitle('⚠️ Refresh Skipped')
-            .setDescription(`Master_CSV appears empty. Sync aborted to protect Master_Final.\n\n**Reason:** ${syncResult.abortReason || 'Source empty'}`)
-            .setTimestamp();
-
-          await interaction.editReply({ embeds: [embed] });
-          return;
-        }
-
-        const copiedRows = typeof syncResult.copiedRows === 'number' ? syncResult.copiedRows : 0;
-        const froze = !!syncResult.frozeExistingTarget;
-
         const embed = new EmbedBuilder()
-          .setColor(0x00ff00)
-          .setTitle('✅ Refreshed')
-          .setDescription(
-            `Master sync completed.\nCopied values only from **Master_CSV** to **${config.googleSheets.masterFinalSheetName || 'Master_Final'}** (snapshot).\nCopied **${copiedRows}** row(s)${froze ? '\n(Existing formulas were frozen to values)' : ''}.\n\nRun \/swap to create a distribution.`
-          )
+          .setColor(0xff0000)
+          .setTitle('❌ No Distribution Found')
+          .setDescription('No distribution messages found. Please use `/swap` to create a distribution first.')
           .setTimestamp();
-
         await interaction.editReply({ embeds: [embed] });
         return;
       }
 
-      if (syncResult && syncResult.aborted) {
-        const embed = new EmbedBuilder()
-          .setColor(0xff9900)
-          .setTitle('⚠️ Refresh Skipped')
-          .setDescription(`Master_CSV appears empty. Sync aborted to protect Master_Final.\n\n**Reason:** ${syncResult.abortReason || 'Source empty'}`)
-          .setTimestamp();
-
-        await interaction.editReply({ embeds: [embed] });
-        return;
-      }
-
-      // Verify messages still exist
-      let messagesValid = false;
+      // Verify messages still exist on Discord
       try {
         await this.lastDistributionMessages[0].fetch();
-        messagesValid = true;
       } catch (error) {
         console.log('⚠️ Saved messages no longer exist');
         this.lastDistributionMessages = [];
         this.lastChannelId = null;
-        
         const embed = new EmbedBuilder()
           .setColor(0xff0000)
           .setTitle('❌ Messages Not Found')
           .setDescription('The distribution messages no longer exist. Please use `/swap` to create a new distribution.')
           .setTimestamp();
-
         await interaction.editReply({ embeds: [embed] });
         return;
       }
 
-      // Fetch fresh data from Google Sheets
-      console.log('🔄 Refreshing data from Google Sheets (Master_CSV)...');
+      // Read fresh data from Master_Final (the snapshot — never sync from Master_CSV here)
+      console.log('🔄 Refreshing data from Master_Final...');
       const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
       this.playersData = await fetchPlayersDataWithDiscordNames({ range: finalRange });
 
@@ -3704,19 +3654,17 @@ export class DiscordBot {
         const embed = new EmbedBuilder()
           .setColor(0xff0000)
           .setTitle('❌ No Data Found')
-          .setDescription('No data found in Google Sheet')
+          .setDescription('No data found in Master_Final sheet.')
           .setTimestamp();
-
         await interaction.editReply({ embeds: [embed] });
         return;
       }
 
-      // Re-distribute with latest data (NEW LOGIC: max 50 per clan, considering manual moves)
+      // Re-distribute with current sort settings
       const sortColumn = this.distributionManager.sortColumn || 'Trophies';
-      const seasonNumber = this.lastSeasonNumber || null;
-      
-      console.log(`🔄 Re-distributing with NEW LOGIC: max 50 per clan`);
-      console.log(`   Column: ${sortColumn}, Season: ${seasonNumber || 'N/A'}`);
+      const seasonNumber = this.distributionManager.customSeasonNumber || null;
+
+      console.log(`🔄 Re-distributing: column=${sortColumn}, season=${seasonNumber || 'N/A'}`);
       this.distributionManager.distribute(this.playersData, sortColumn, seasonNumber);
       
       // Validate distribution (check if any clan exceeds 50)
