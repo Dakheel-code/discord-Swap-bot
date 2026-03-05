@@ -1017,10 +1017,11 @@ export class DiscordBot {
       }
     } catch (error) {
       console.error(`❌ Error handling button ${customId}:`, error);
+      const errMsg = String(error.message || error).slice(0, 1800);
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: `❌ Error: ${error.message}`, ephemeral: true }).catch(() => {});
+        await interaction.reply({ content: `❌ Error: ${errMsg}`, ephemeral: true }).catch(() => {});
       } else {
-        await interaction.editReply(`❌ Error: ${error.message}`).catch(() => {});
+        await interaction.editReply(`❌ Error: ${errMsg}`).catch(() => {});
       }
     }
   }
@@ -1051,7 +1052,7 @@ export class DiscordBot {
       }
     } catch (error) {
       console.error(`❌ Error handling select menu ${customId}:`, error);
-      await interaction.editReply(`❌ Error: ${error.message}`);
+      await interaction.editReply(`❌ Error: ${String(error.message || error).slice(0, 1800)}`);
     }
   }
 
@@ -1469,7 +1470,7 @@ export class DiscordBot {
       await interaction.editReply({ embeds: [embed], components: [] });
     } catch (error) {
       console.error(`❌ Error moving players:`, error);
-      await interaction.editReply(`❌ Failed to move players: ${error.message}`);
+      await interaction.editReply(`❌ Failed to move players: ${String(error.message || error).slice(0, 1800)}`);
     }
     
     // Clean up
@@ -1547,7 +1548,7 @@ export class DiscordBot {
       await interaction.editReply({ embeds: [embed], components: [] });
     } catch (error) {
       console.error(`❌ Error including players:`, error);
-      await interaction.editReply(`❌ Failed to include players: ${error.message}`);
+      await interaction.editReply(`❌ Failed to include players: ${String(error.message || error).slice(0, 1800)}`);
     }
     
     // Clean up
@@ -2167,13 +2168,13 @@ export class DiscordBot {
           }
         } catch (error) {
           console.error('❌ Error adding player:', error);
-          await interaction.editReply(`❌ Error: ${error.message}`);
+          await interaction.editReply(`❌ Error: ${String(error.message || error).slice(0, 1800)}`);
         }
       }
       
     } catch (error) {
       console.error(`❌ Error handling modal ${customId}:`, error);
-      await interaction.editReply(`❌ Error: ${error.message}`);
+      await interaction.editReply(`❌ Error: ${String(error.message || error).slice(0, 1800)}`);
     }
   }
 

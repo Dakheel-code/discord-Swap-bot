@@ -970,7 +970,14 @@ export async function writePlayerAction(discordId, action, ingameId = null) {
 
     const discordMapRows = discordMapResponse.data.values || [];
     if (discordMapRows.length === 0) {
-      throw new Error('No data found in DiscordMap sheet');
+      // DiscordMap is empty — fallback to writing directly via ingameId
+      if (ingameId) {
+        console.warn('⚠️ DiscordMap is empty. Writing action via ingameId directly.');
+        await writeActionToMasterCsv(ingameId, action);
+        await writeActionToMasterFinal(ingameId, action);
+        return true;
+      }
+      throw new Error('DiscordMap is empty and no ingameId provided');
     }
 
     console.log(`📊 DiscordMap: ${discordMapRows.length} rows`);
@@ -1116,7 +1123,14 @@ export async function clearPlayerAction(discordId, ingameId = null) {
 
     const discordMapRows = discordMapResponse.data.values || [];
     if (discordMapRows.length === 0) {
-      throw new Error('No data found in DiscordMap sheet');
+      // DiscordMap is empty — fallback to clearing directly via ingameId
+      if (ingameId) {
+        console.warn('⚠️ DiscordMap is empty. Clearing action via ingameId directly.');
+        await writeActionToMasterCsv(ingameId, '');
+        await writeActionToMasterFinal(ingameId, '');
+        return { success: true, previousValue: '' };
+      }
+      throw new Error('DiscordMap is empty and no ingameId provided');
     }
     
     console.log(`📊 DiscordMap: ${discordMapRows.length} rows`);
