@@ -1162,6 +1162,53 @@ export async function clearPlayerAction(discordId, ingameId = null) {
 }
 
 /**
+ * Clear all Action values from Master_Final sheet (bulk reset)
+ * @returns {Promise<{success: boolean, clearedCount: number}>}
+ */
+export async function clearAllActionsFromMasterFinal() {
+  if (!sheetsClientWithAuth) return { success: false, clearedCount: 0 };
+
+  try {
+    const finalSheet = config.googleSheets.masterFinalSheetName || 'Master_Final';
+    const res = await sheetsClient.spreadsheets.values.get({
+      spreadsheetId: config.googleSheets.sheetId,
+      range: `${finalSheet}!A:Z`,
+    });
+    const rows = res.data.values || [];
+    if (rows.length < 2) return { success: true, clearedCount: 0 };
+
+    const headers = rows[0].map(h => String(h).trim().toLowerCase());
+    const actionCol = headers.findIndex(h => h === 'action');
+    if (actionCol === -1) {
+      console.warn(`⚠️ Master_Final: no Action column found — skipping`);
+      return { success: true, clearedCount: 0 };
+    }
+
+    const colLetter = columnIndexToLetter(actionCol);
+    const range = `${finalSheet}!${colLetter}2:${colLetter}${rows.length}`;
+    const emptyValues = Array(rows.length - 1).fill(['']);
+
+    let clearedCount = 0;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][actionCol] && String(rows[i][actionCol]).trim()) clearedCount++;
+    }
+
+    await sheetsClientWithAuth.spreadsheets.values.update({
+      spreadsheetId: config.googleSheets.sheetId,
+      range,
+      valueInputOption: 'RAW',
+      resource: { values: emptyValues },
+    });
+
+    console.log(`✅ Cleared ${clearedCount} actions from Master_Final column ${colLetter} (${range})`);
+    return { success: true, clearedCount };
+  } catch (err) {
+    console.warn(`⚠️ clearAllActionsFromMasterFinal failed (non-fatal): ${err.message}`);
+    return { success: false, clearedCount: 0 };
+  }
+}
+
+/**
  * Clear all Action values from Master_CSV sheet (bulk reset)
  * @returns {Promise<{success: boolean, clearedCount: number}>}
  */

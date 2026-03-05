@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType } from 'discord.js';
 import { config } from './config.js';
 import { commands } from './commands.js';
-import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions, clearAllActionsFromMasterCsv, saveBotState, loadBotState, updateBotState, syncMasterCsvToFinal, syncDiscordMapNamesFromMasterCsv } from './sheets.js';
+import { fetchPlayersData, fetchPlayersDataWithDiscordNames, getAvailableColumns, writeDiscordMapping, writePlayerAction, clearPlayerAction, clearAllPlayerActions, clearAllActionsFromMasterCsv, clearAllActionsFromMasterFinal, saveBotState, loadBotState, updateBotState, syncMasterCsvToFinal, syncDiscordMapNamesFromMasterCsv } from './sheets.js';
 import { DistributionManager } from './distribution.js';
 import fs from 'fs';
 
@@ -1670,9 +1670,10 @@ export class DiscordBot {
         .then(() => console.log('🗑️ Cleared distribution state in Google Sheets'))
         .catch((error) => console.warn('⚠️ Failed to clear distribution state in Google Sheets:', error.message));
       
-      // Clear all actions from DiscordMap AND Master_CSV
+      // Clear all actions from DiscordMap, Master_CSV, and Master_Final
       await clearAllPlayerActions();
       await clearAllActionsFromMasterCsv();
+      await clearAllActionsFromMasterFinal();
 
       // Clear Action field in in-memory playersData so no stale actions remain
       if (this.playersData && this.playersData.length > 0) {
@@ -2927,9 +2928,10 @@ export class DiscordBot {
       if (resetType === 'all') {
         console.log('🔄 Resetting all data (Actions + Distribution)...');
         
-        // Clear all actions from DiscordMap AND Master_CSV
+        // Clear all actions from DiscordMap, Master_CSV, and Master_Final
         const result = await clearAllPlayerActions();
         await clearAllActionsFromMasterCsv();
+        await clearAllActionsFromMasterFinal();
         
         // Save current sort column
         const currentSortColumn = this.distributionManager.sortColumn;
