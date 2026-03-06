@@ -1209,18 +1209,20 @@ export class DiscordBot {
   async handleMovePlayerButton(interaction) {
     await interaction.deferReply({ ephemeral: true });
     
-    // Get all players — Master_CSV first, fallback to Master_Final if empty
-    if (!this.playersData || this.playersData.length === 0) {
-      this.playersData = await this.fetchPlayersLive();
-    }
-    
-    if (this.playersData.length === 0) {
+    // Always fetch fresh full player list from Master_Final for the move menu
+    const finalRange = `${config.googleSheets.masterFinalSheetName || 'Master_Final'}!A:Z`;
+    const allPlayers = await fetchPlayersDataWithDiscordNames({ range: finalRange });
+
+    if (!allPlayers || allPlayers.length === 0) {
       await interaction.editReply('❌ No players found. Please run /swap first.');
       return;
     }
-    
+
+    // Store so handleMovePlayerSelect can access players by index
+    this.playersData = allPlayers;
+
     // Create player options (max 25 per select menu, max 5 select menus per message)
-    const players = this.playersData.map((p, index) => {
+    const players = allPlayers.map((p, index) => {
       const name = p.Name || p.Player || p.USERNAME || 'Unknown';
       const discordId = p['Discord-ID'] || '';
       const trophies = p.Trophies || '';
