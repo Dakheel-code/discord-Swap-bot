@@ -2212,8 +2212,11 @@ export class DiscordBot {
       return;
     }
 
-    // Count players with a Discord ID (can receive DMs)
-    const dmCount = (result.players || []).filter(p => p['Discord-ID'] || p.DiscordName).length;
+    // Count players with a Discord ID (can receive DMs) — players from getSwapsLeft use .discordId and .mention
+    const dmCount = (result.players || []).filter(p => {
+      if (p.isDone) return false;
+      return p.discordId || (p.mention && String(p.mention).startsWith('<@'));
+    }).length;
     const totalCount = (result.players || []).length;
 
     // Show confirmation embed with player count
