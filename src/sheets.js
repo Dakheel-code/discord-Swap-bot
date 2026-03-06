@@ -864,17 +864,21 @@ async function writeActionToMasterCsv(ingameId, action) {
 
     // Find Action column index from header
     const headers = rows[0].map(h => String(h).trim().toLowerCase());
-    const ingameIdCol = headers.findIndex(h => h.includes('ingame') || h === 'id');
+    // Try ingame-id column first, then fall back to name/player columns
+    let ingameIdCol = headers.findIndex(h => h.includes('ingame') || h === 'id');
+    if (ingameIdCol === -1) {
+      ingameIdCol = headers.findIndex(h => h === 'name' || h === 'player' || h === 'username');
+    }
     const actionCol = headers.findIndex(h => h === 'action');
     if (ingameIdCol === -1 || actionCol === -1) {
-      console.warn(`⚠️ Master_CSV: ingame-id col=${ingameIdCol}, action col=${actionCol} — skipping`);
+      console.warn(`⚠️ Master_CSV: id col=${ingameIdCol}, action col=${actionCol} — skipping`);
       return false;
     }
 
     // Find player row
-    const ingameIdStr = String(ingameId).trim();
+    const ingameIdStr = String(ingameId).trim().toLowerCase();
     for (let i = 1; i < rows.length; i++) {
-      const rowIngameId = rows[i][ingameIdCol] ? String(rows[i][ingameIdCol]).trim() : '';
+      const rowIngameId = rows[i][ingameIdCol] ? String(rows[i][ingameIdCol]).trim().toLowerCase() : '';
       if (rowIngameId === ingameIdStr) {
         const colLetter = columnIndexToLetter(actionCol);
         const range = `${csvSheet}!${colLetter}${i + 1}`;
@@ -913,16 +917,20 @@ async function writeActionToMasterFinal(ingameId, action) {
     if (rows.length < 2) return false;
 
     const headers = rows[0].map(h => String(h).trim().toLowerCase());
-    const ingameIdCol = headers.findIndex(h => h.includes('ingame') || h === 'id');
+    // Try ingame-id column first, then fall back to name/player columns
+    let ingameIdCol = headers.findIndex(h => h.includes('ingame') || h === 'id');
+    if (ingameIdCol === -1) {
+      ingameIdCol = headers.findIndex(h => h === 'name' || h === 'player' || h === 'username');
+    }
     const actionCol = headers.findIndex(h => h === 'action');
     if (ingameIdCol === -1 || actionCol === -1) {
-      console.warn(`⚠️ Master_Final: ingame-id col=${ingameIdCol}, action col=${actionCol} — skipping`);
+      console.warn(`⚠️ Master_Final: id col=${ingameIdCol}, action col=${actionCol} — skipping`);
       return false;
     }
 
-    const ingameIdStr = String(ingameId).trim();
+    const ingameIdStr = String(ingameId).trim().toLowerCase();
     for (let i = 1; i < rows.length; i++) {
-      const rowIngameId = rows[i][ingameIdCol] ? String(rows[i][ingameIdCol]).trim() : '';
+      const rowIngameId = rows[i][ingameIdCol] ? String(rows[i][ingameIdCol]).trim().toLowerCase() : '';
       if (rowIngameId === ingameIdStr) {
         const colLetter = columnIndexToLetter(actionCol);
         const range = `${finalSheet}!${colLetter}${i + 1}`;
