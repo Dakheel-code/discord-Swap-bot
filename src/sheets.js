@@ -448,10 +448,78 @@ export async function syncMasterCsvToFinal(options = {}) {
     });
   }
 
+  // Before overwriting, snapshot existing Action values in Master_Final keyed by Ingame-ID
+  // so we can restore them correctly after the copy (row order may change)
+  let existingActionsByIngameId = new Map();
+  if (actionColIndexInTarget !== -1) {
+    try {
+      const snapRes = await sheetsClient.spreadsheets.values.get({
+        spreadsheetId: config.googleSheets.sheetId,
+        range: `${targetSheetName}!A:Z`,
+      });
+      const snapRows = snapRes.data.values || [];
+      if (snapRows.length > 1) {
+        const snapHeaders = snapRows[0].map(h => String(h).trim().toLowerCase());
+        const snapIdCol = snapHeaders.findIndex(h => h.includes('ingame') || h === 'name' || h === 'player');
+        const snapActionCol = snapHeaders.findIndex(h => h === 'action');
+        if (snapIdCol !== -1 && snapActionCol !== -1) {
+          for (let i = 1; i < snapRows.length; i++) {
+            const id = snapRows[i][snapIdCol] ? String(snapRows[i][snapIdCol]).trim() : '';
+            const act = snapRows[i][snapActionCol] ? String(snapRows[i][snapActionCol]).trim() : '';
+            if (id && act) existingActionsByIngameId.set(id.toLowerCase(), act);
+          }
+          console.log(`📸 Snapshotted ${existingActionsByIngameId.size} existing Action values from Master_Final`);
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not snapshot existing Actions: ${e.message}`);
+    }
+  }
+
   await sheetsClientWithAuth.spreadsheets.batchUpdate({
     spreadsheetId: config.googleSheets.sheetId,
     resource: { requests },
   });
+
+  // Restore Action values keyed by Ingame-ID into the newly copied rows
+  if (existingActionsByIngameId.size > 0 && actionColIndexInTarget !== -1) {
+    try {
+      const newRes = await sheetsClient.spreadsheets.values.get({
+        spreadsheetId: config.googleSheets.sheetId,
+        range: `${targetSheetName}!A:Z`,
+      });
+      const newRows = newRes.data.values || [];
+      if (newRows.length > 1) {
+        const newHeaders = newRows[0].map(h => String(h).trim().toLowerCase());
+        const newIdCol = newHeaders.findIndex(h => h.includes('ingame') || h === 'name' || h === 'player');
+        const newActionCol = newHeaders.findIndex(h => h === 'action');
+        if (newIdCol !== -1 && newActionCol !== -1) {
+          const actionColLetter = columnIndexToLetter(newActionCol);
+          const restoreUpdates = [];
+          for (let i = 1; i < newRows.length; i++) {
+            const id = newRows[i][newIdCol] ? String(newRows[i][newIdCol]).trim() : '';
+            if (!id) continue;
+            const act = existingActionsByIngameId.get(id.toLowerCase());
+            if (act) {
+              restoreUpdates.push({
+                range: `${targetSheetName}!${actionColLetter}${i + 1}`,
+                values: [[act]],
+              });
+            }
+          }
+          if (restoreUpdates.length > 0) {
+            await sheetsClientWithAuth.spreadsheets.values.batchUpdate({
+              spreadsheetId: config.googleSheets.sheetId,
+              resource: { valueInputOption: 'RAW', data: restoreUpdates },
+            });
+            console.log(`✅ Restored ${restoreUpdates.length} Action values by Ingame-ID after sync`);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not restore Action values: ${e.message}`);
+    }
+  }
 
   const copiedRows = lastSourceRow - startRow + 1;
   return { copiedRows, lastCopiedRow: lastSourceRow, frozeExistingTarget };
