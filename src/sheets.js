@@ -1553,3 +1553,24 @@ export async function loadBotState() {
     return null;
   }
 }
+
+/**
+ * Delete specific rows (0-indexed) from a sheet by title
+ * startIndex inclusive, endIndex exclusive (same as Google Sheets API)
+ */
+export async function deleteSheetRows(sheetTitle, startIndex, endIndex) {
+  if (!sheetsClientWithAuth) throw new Error('Write access not available');
+  const meta = await sheetsClientWithAuth.spreadsheets.get({ spreadsheetId: config.googleSheets.sheetId });
+  const sheet = meta.data.sheets.find(s => s.properties.title === sheetTitle);
+  if (!sheet) throw new Error(`Sheet "${sheetTitle}" not found`);
+  await sheetsClientWithAuth.spreadsheets.batchUpdate({
+    spreadsheetId: config.googleSheets.sheetId,
+    resource: {
+      requests: [{
+        deleteDimension: {
+          range: { sheetId: sheet.properties.sheetId, dimension: 'ROWS', startIndex, endIndex }
+        }
+      }]
+    }
+  });
+}
