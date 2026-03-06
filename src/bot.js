@@ -1003,6 +1003,14 @@ export class DiscordBot {
         case 'show_swaps_left':
           await this.handleSwapsLeftButton(interaction);
           break;
+
+        case 'swaps_left_confirm':
+          await this.handleSwapsLeftConfirm(interaction);
+          break;
+
+        case 'swaps_left_cancel':
+          await interaction.update({ embeds: [], components: [], content: '❌ Cancelled.' });
+          break;
         
         case 'refresh_data':
           await this.handleRefreshButton(interaction);
@@ -2181,7 +2189,7 @@ export class DiscordBot {
   }
 
   /**
-   * Handle "Show Swaps Left" button
+   * Handle "Show Swaps Left" button — show confirmation first
    */
   async handleSwapsLeftButton(interaction) {
     const ok = await this.ensureDistributionLoaded();
@@ -2204,19 +2212,55 @@ export class DiscordBot {
       return;
     }
 
-    // Send the list publicly (not ephemeral) and save the message
-    await interaction.editReply('📋 Sending Swaps Left to channel...');
+    // Count players with a Discord ID (can receive DMs)
+    const dmCount = (result.players || []).filter(p => p['Discord-ID'] || p.DiscordName).length;
+    const totalCount = (result.players || []).length;
+
+    // Show confirmation embed with player count
+    const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+    const confirmEmbed = new EmbedBuilder()
+      .setColor(0xf59e0b)
+      .setTitle('📋 Swaps Left — Confirmation')
+      .setDescription(
+        `You are about to post the **Swaps Left** list to the channel and send **DMs** to pending players.\n\n` +
+        `> 👥 **${totalCount}** players still need to move\n` +
+        `> 📨 **${dmCount}** players will receive a DM notification\n\n` +
+        `Press **Confirm** to proceed.`
+      )
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('swaps_left_confirm')
+        .setLabel('✅ Confirm')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('swaps_left_cancel')
+        .setLabel('✖ Cancel')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({ embeds: [confirmEmbed], components: [row] });
+  }
+
+  /**
+   * Handle Swaps Left confirm button
+   */
+  async handleSwapsLeftConfirm(interaction) {
+    await interaction.update({ embeds: [], components: [], content: '📋 Sending Swaps Left to channel...' });
+
+    const result = this.distributionManager.getSwapsLeft(true);
+
     this.lastSwapsLeftMessages = await this.sendLongMessage(interaction.channel, result.text);
-    
-    // Store the message and players list for later updates
     this.swapsLeftPlayersList = result.players;
     this.swapsLeftCompletionSent = false;
     this.saveMessageIds();
 
     const dmResult = await this.sendSwapsLeftDMs(result.players || []);
-    await interaction.followUp({
-      content: `📨 DM Summary: ${dmResult.dmsSent} sent, ${dmResult.dmsFailed} failed, ${dmResult.skippedNoId} skipped (no ID)`,
-      ephemeral: true
+    await interaction.editReply({
+      content: `✅ Done! 📨 DM Summary: ${dmResult.dmsSent} sent, ${dmResult.dmsFailed} failed, ${dmResult.skippedNoId} skipped (no ID)`,
+      embeds: [],
+      components: []
     });
   }
 
