@@ -724,14 +724,8 @@ export async function fetchPlayersDataWithDiscordNames(options = {}) {
         const mappingData = discordMapping.get(String(ingameId).trim());
         let discordId = mappingData.discordId;
         let discordName = '';
-        // Fallback: if DiscordMap Action is empty, use Action column from Master_Final row directly
-        const actionFromDiscordMap = mappingData.action ? String(mappingData.action).trim() : '';
-        const actionFromSheet = player['Action'] ? String(player['Action']).trim() : '';
-        const action = actionFromDiscordMap || actionFromSheet;
-
-        if (action && !actionFromDiscordMap && actionFromSheet) {
-          console.log(`📋 Action fallback for "${ingameId}": using Master_Final Action="${actionFromSheet}" (DiscordMap was empty)`);
-        }
+        // Always read Action from Master_Final sheet column (single source of truth)
+        const action = player['Action'] ? String(player['Action']).trim() : '';
         
         if (discordId && /^\d{17,20}$/.test(String(discordId).trim())) {
           discordId = String(discordId).trim();
