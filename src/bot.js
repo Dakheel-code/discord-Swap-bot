@@ -995,6 +995,16 @@ export class DiscordBot {
         return;
       }
       
+      // These use interaction.update() — must run before deferReply
+      if (customId === 'swaps_left_confirm') {
+        await this.handleSwapsLeftConfirm(interaction);
+        return;
+      }
+      if (customId === 'swaps_left_cancel') {
+        await interaction.update({ embeds: [], components: [], content: '❌ Cancelled.' });
+        return;
+      }
+
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply({ ephemeral: true });
       }
@@ -1002,14 +1012,6 @@ export class DiscordBot {
       switch (customId) {
         case 'show_swaps_left':
           await this.handleSwapsLeftButton(interaction);
-          break;
-
-        case 'swaps_left_confirm':
-          await this.handleSwapsLeftConfirm(interaction);
-          break;
-
-        case 'swaps_left_cancel':
-          await interaction.update({ embeds: [], components: [], content: '❌ Cancelled.' });
           break;
         
         case 'refresh_data':
@@ -2260,11 +2262,9 @@ export class DiscordBot {
     this.saveMessageIds();
 
     const dmResult = await this.sendSwapsLeftDMs(result.players || []);
-    await interaction.editReply({
-      content: `✅ Done! 📨 DM Summary: ${dmResult.dmsSent} sent, ${dmResult.dmsFailed} failed, ${dmResult.skippedNoId} skipped (no ID)`,
-      embeds: [],
-      components: []
-    });
+    await interaction.editReply(
+      `✅ Done! 📨 DM Summary: ${dmResult.dmsSent} sent, ${dmResult.dmsFailed} failed, ${dmResult.skippedNoId} skipped (no ID)`
+    );
   }
 
   /**
