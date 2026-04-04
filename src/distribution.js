@@ -51,78 +51,90 @@ export class DistributionManager {
       return valueB - valueA; // Descending order
     });
     
-    // Count Hold players AND manual move players per target clan first
-    // Both types occupy a slot and must be counted before auto-distribution
+    // Step 1: Simulate auto-distribution order (ignoring actions) to know
+    // which clan each player would land in naturally. This lets us determine
+    // whether a manual override actually displaces a slot or not.
+    const autoOrder = { RGR: 0, OTL: 0, RND: 0 };
+    const naturalClan = new Map(); // identifier → clan auto would assign
+    sortedPlayers.forEach(player => {
+      const identifier = this.getPlayerIdentifier(player);
+      let clan;
+      if (autoOrder.RGR < 50) { clan = 'RGR'; autoOrder.RGR++; }
+      else if (autoOrder.OTL < 50) { clan = 'OTL'; autoOrder.OTL++; }
+      else { clan = 'RND'; autoOrder.RND++; }
+      naturalClan.set(identifier, clan);
+    });
+
+    // Step 2: Count reserved slots.
+    // Hold → reserves slot in current clan (removes player from auto slot).
+    // Manual move → reserves slot in TARGET clan ONLY if target ≠ natural clan
+    //   (otherwise the player already occupies that slot naturally).
     const reservedPerClan = { RGR: 0, OTL: 0, RND: 0 };
-    
+
     sortedPlayers.forEach(player => {
       const action = player.Action ? player.Action.trim() : '';
-      
-      if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
-        // Manual move occupies a slot in the TARGET clan
-        // Hold players stay in their current clan and do NOT reduce available slots
-        // for incoming players (they are not part of the 50 incoming cap)
-        reservedPerClan[action]++;
+      const currentClan = this.getPlayerClan(player);
+      const identifier = this.getPlayerIdentifier(player);
+      const natural = naturalClan.get(identifier);
+
+      if (action === 'Hold') {
+        // Hold: player stays in current clan — free up their natural slot,
+        // reserve a slot in current clan instead.
+        if (natural && reservedPerClan[natural] !== undefined) reservedPerClan[natural]--;
+        if (currentClan && reservedPerClan[currentClan] !== undefined) reservedPerClan[currentClan]++;
+      } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
+        // Manual move: if target differs from natural clan, we need to
+        // free the natural slot and reserve one in the target.
+        if (natural !== action) {
+          if (natural && reservedPerClan[natural] !== undefined) reservedPerClan[natural]--;
+          reservedPerClan[action]++;
+        }
+        // If target === natural, no change — player already counted there.
       }
     });
-    
+
     console.log(`📊 Reserved slots per clan (Hold + Manual):`, reservedPerClan);
-    
-    // Initialize counters with reserved count so auto-fill respects the 50-cap
-    let rgrCount = reservedPerClan.RGR;
-    let otlCount = reservedPerClan.OTL;
-    let rndCount = reservedPerClan.RND;
-    
-    // Process all players
+
+    // Step 3: Process players using naturalClan map.
+    // For each player with no action: use naturalClan (already computed correctly).
+    // For Hold: stays in current clan.
+    // For manual move: goes to target clan.
+    // The naturalClan map was computed ignoring actions so it correctly pre-fills
+    // 50 slots per clan — manual overrides simply redirect without adding extra slots.
+
     const playersWithAction = [];
-    
-    sortedPlayers.forEach((player, index) => {
+
+    sortedPlayers.forEach((player) => {
       const action = player.Action ? player.Action.trim() : '';
       const identifier = this.getPlayerIdentifier(player);
       const currentClan = this.getPlayerClan(player);
-      
+
       if (action === 'Hold') {
-        // Hold - stays in current clan, occupies a slot
+        // Hold - stays in current clan, shown in WILDCARDS
         playersWithAction.push(player);
         this.wildcardInfo.set(identifier, {
           type: 'excluded',
           target: currentClan || 'Unknown'
         });
         this.excludedPlayers.add(identifier);
-        
+
       } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
-        // Manual move - add to WILDCARDS (slot already reserved above)
+        // Manual move - goes to target clan
         playersWithAction.push(player);
-        
         if (currentClan === action) {
-          this.wildcardInfo.set(identifier, {
-            type: 'stay',
-            target: action
-          });
+          this.wildcardInfo.set(identifier, { type: 'stay', target: action });
         } else {
-          this.wildcardInfo.set(identifier, {
-            type: 'manual',
-            target: action
-          });
+          this.wildcardInfo.set(identifier, { type: 'manual', target: action });
+          // Player needs to move to target clan — add to that clan's group
+          if (currentClan !== action) {
+            this.groups[action].push(player);
+          }
         }
-        
+
       } else {
-        // Automatic distribution - respects 50-cap including reserved slots
-        let targetClan = null;
-        
-        if (rgrCount < 50) {
-          targetClan = 'RGR';
-          rgrCount++;
-        } else if (otlCount < 50) {
-          targetClan = 'OTL';
-          otlCount++;
-        } else {
-          targetClan = 'RND';
-          rndCount++;
-        }
-        
-        // Only add to group if player needs to move
-        if (currentClan !== targetClan) {
+        // Auto distribution — use pre-computed naturalClan
+        const targetClan = naturalClan.get(identifier);
+        if (targetClan && currentClan !== targetClan) {
           this.groups[targetClan].push(player);
         }
       }
@@ -132,9 +144,9 @@ export class DistributionManager {
     this.groups.WILDCARDS = playersWithAction;
     
     console.log(`📊 Final distribution:`);
-    console.log(`  - RGR: ${this.groups.RGR.length} moving (${rgrCount} total)`);
-    console.log(`  - OTL: ${this.groups.OTL.length} moving (${otlCount} total)`);
-    console.log(`  - RND: ${this.groups.RND.length} moving (${rndCount} total)`);
+    console.log(`  - RGR: ${this.groups.RGR.length} moving (natural: ${autoOrder.RGR})`);
+    console.log(`  - OTL: ${this.groups.OTL.length} moving (natural: ${autoOrder.OTL})`);
+    console.log(`  - RND: ${this.groups.RND.length} moving (natural: ${autoOrder.RND})`);
     console.log(`  - WILDCARDS: ${this.groups.WILDCARDS.length}`);
 
     return this.groups;
