@@ -110,13 +110,9 @@ export class DistributionManager {
         this.excludedPlayers.add(identifier);
 
       } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
-        // Manual move - add to target clan's group (not WILDCARDS)
+        // Manual move - WILDCARDS only
+        playersWithAction.push(player);
         this.wildcardInfo.set(identifier, { type: 'manual', target: action });
-        if (currentClan !== action) {
-          // Needs to move — show in target clan list
-          this.groups[action].push(player);
-        }
-        // If already in target clan, no move needed — don't show anywhere
 
       } else {
         // Auto distribution — use pre-computed naturalClan
