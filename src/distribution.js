@@ -51,12 +51,31 @@ export class DistributionManager {
       return valueB - valueA; // Descending order
     });
     
-    // Step 1: Simulate auto-distribution order (ignoring actions) to know
-    // which clan each player would land in naturally. This lets us determine
-    // whether a manual override actually displaces a slot or not.
+    // Step 1: Simulate auto-distribution for players WITHOUT any Action only.
+    // Players with Hold/manual Action are pre-assigned — exclude them from
+    // the natural slot calculation so they don't double-count slots.
     const autoOrder = { RGR: 0, OTL: 0, RND: 0 };
-    const naturalClan = new Map(); // identifier → clan auto would assign
+    const naturalClan = new Map(); // identifier → clan auto would assign (no-action players only)
+
+    // First pass: count slots occupied by Hold/manual players in their target clan
     sortedPlayers.forEach(player => {
+      const action = player.Action ? player.Action.trim() : '';
+      const currentClan = this.getPlayerClan(player);
+      if (action === 'Hold') {
+        if (currentClan === 'RGR') autoOrder.RGR++;
+        else if (currentClan === 'OTL') autoOrder.OTL++;
+        else if (currentClan === 'RND') autoOrder.RND++;
+      } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
+        if (action === 'RGR') autoOrder.RGR++;
+        else if (action === 'OTL') autoOrder.OTL++;
+        else if (action === 'RND') autoOrder.RND++;
+      }
+    });
+
+    // Second pass: assign natural clans only to players without Action
+    sortedPlayers.forEach(player => {
+      const action = player.Action ? player.Action.trim() : '';
+      if (action) return; // skip Hold and manual — they're pre-assigned
       const identifier = this.getPlayerIdentifier(player);
       let clan;
       if (autoOrder.RGR < 50) { clan = 'RGR'; autoOrder.RGR++; }
@@ -65,37 +84,9 @@ export class DistributionManager {
       naturalClan.set(identifier, clan);
     });
 
-    // Step 2: Count reserved slots.
-    // Hold → reserves slot in current clan (removes player from auto slot).
-    // Manual move → reserves slot in TARGET clan ONLY if target ≠ natural clan
-    //   (otherwise the player already occupies that slot naturally).
-    const reservedPerClan = { RGR: 0, OTL: 0, RND: 0 };
+    console.log(`📊 Slots after Hold/Manual pre-assignment:`, autoOrder);
 
-    sortedPlayers.forEach(player => {
-      const action = player.Action ? player.Action.trim() : '';
-      const currentClan = this.getPlayerClan(player);
-      const identifier = this.getPlayerIdentifier(player);
-      const natural = naturalClan.get(identifier);
-
-      if (action === 'Hold') {
-        // Hold: player stays in current clan — free up their natural slot,
-        // reserve a slot in current clan instead.
-        if (natural && reservedPerClan[natural] !== undefined) reservedPerClan[natural]--;
-        if (currentClan && reservedPerClan[currentClan] !== undefined) reservedPerClan[currentClan]++;
-      } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
-        // Manual move: if target differs from natural clan, we need to
-        // free the natural slot and reserve one in the target.
-        if (natural !== action) {
-          if (natural && reservedPerClan[natural] !== undefined) reservedPerClan[natural]--;
-          reservedPerClan[action]++;
-        }
-        // If target === natural, no change — player already counted there.
-      }
-    });
-
-    console.log(`📊 Reserved slots per clan (Hold + Manual):`, reservedPerClan);
-
-    // Step 3: Process players using naturalClan map.
+    // Step 2: Process players using naturalClan map.
     // For each player with no action: use naturalClan (already computed correctly).
     // For Hold: stays in current clan.
     // For manual move: goes to target clan.
@@ -119,17 +110,13 @@ export class DistributionManager {
         this.excludedPlayers.add(identifier);
 
       } else if (action && ['RGR', 'OTL', 'RND'].includes(action)) {
-        // Manual move - goes to target clan
-        playersWithAction.push(player);
-        if (currentClan === action) {
-          this.wildcardInfo.set(identifier, { type: 'stay', target: action });
-        } else {
-          this.wildcardInfo.set(identifier, { type: 'manual', target: action });
-          // Player needs to move to target clan — add to that clan's group
-          if (currentClan !== action) {
-            this.groups[action].push(player);
-          }
+        // Manual move - add to target clan's group (not WILDCARDS)
+        this.wildcardInfo.set(identifier, { type: 'manual', target: action });
+        if (currentClan !== action) {
+          // Needs to move — show in target clan list
+          this.groups[action].push(player);
         }
+        // If already in target clan, no move needed — don't show anywhere
 
       } else {
         // Auto distribution — use pre-computed naturalClan
